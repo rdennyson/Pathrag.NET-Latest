@@ -1,5 +1,5 @@
 using System.Text;
-using Microsoft.SemanticKernel.Embeddings;
+using Microsoft.Extensions.AI;
 using PathRAG.NET.Core.Settings;
 using PathRAG.NET.Data.Graph.Interfaces;
 using PathRAG.NET.Data.Repositories;
@@ -19,7 +19,7 @@ public class PathRAGQueryService : IPathRAGQueryService
     private readonly IGraphRepository _graphRepository;
     private readonly IGraphVectorRepository _graphVectorRepository;
     private readonly IDocumentChunkRepository _chunkRepository;
-    private readonly ITextEmbeddingGenerationService _embeddingService;
+    private readonly IEmbeddingGenerator<string, Embedding<float>> _embeddingGenerator;
     private readonly PathRAGSettings _settings;
 
     // Python PathRAG's GRAPH_FIELD_SEP from prompt.py
@@ -30,14 +30,14 @@ public class PathRAGQueryService : IPathRAGQueryService
         IGraphRepository graphRepository,
         IGraphVectorRepository graphVectorRepository,
         IDocumentChunkRepository chunkRepository,
-        ITextEmbeddingGenerationService embeddingService,
+        IEmbeddingGenerator<string, Embedding<float>> embeddingGenerator,
         PathRAGSettings settings)
     {
         _keywordsService = keywordsService;
         _graphRepository = graphRepository;
         _graphVectorRepository = graphVectorRepository;
         _chunkRepository = chunkRepository;
-        _embeddingService = embeddingService;
+        _embeddingGenerator = embeddingGenerator;
         _settings = settings;
     }
 
@@ -118,8 +118,8 @@ public class PathRAGQueryService : IPathRAGQueryService
             return ("", "", "");
 
         // Generate embedding for keywords
-        var embedding = await _embeddingService.GenerateEmbeddingAsync(keywords, cancellationToken: cancellationToken);
-        var embeddingArray = embedding.ToArray();
+        var embeddingResult = await _embeddingGenerator.GenerateAsync([keywords], cancellationToken: cancellationToken);
+        var embeddingArray = embeddingResult[0].Vector.ToArray();
 
         // Query entities_vdb (matching Python's entities_vdb.query)
         var entityVectors = await _graphVectorRepository.SearchEntitiesByVectorAsync(
@@ -140,8 +140,8 @@ public class PathRAGQueryService : IPathRAGQueryService
             {
                 EntityName = ev.EntityName,
                 EntityType = node.EntityType,
-                Description = node.Description,
-                SourceId = node.SourceId,
+                Description = node.Description ?? string.Empty,
+                SourceId = node.SourceId ?? string.Empty,
                 Rank = degree.Count()
             });
         }
@@ -170,8 +170,8 @@ public class PathRAGQueryService : IPathRAGQueryService
             return ("", "", "");
 
         // Generate embedding for keywords
-        var embedding = await _embeddingService.GenerateEmbeddingAsync(keywords, cancellationToken: cancellationToken);
-        var embeddingArray = embedding.ToArray();
+        var embeddingResult = await _embeddingGenerator.GenerateAsync([keywords], cancellationToken: cancellationToken);
+        var embeddingArray = embeddingResult[0].Vector.ToArray();
 
         // Query relationships_vdb (matching Python's relationships_vdb.query)
         var relationshipVectors = await _graphVectorRepository.SearchRelationshipsByVectorAsync(
@@ -196,8 +196,8 @@ public class PathRAGQueryService : IPathRAGQueryService
             {
                 SrcId = rv.SourceEntityName,
                 TgtId = rv.TargetEntityName,
-                Description = edge.Description,
-                Keywords = edge.Keywords,
+                Description = edge.Description ?? string.Empty,
+                Keywords = edge.Keywords ?? string.Empty,
                 Weight = edge.Weight,
                 Rank = edgeDegree
             });
@@ -613,7 +613,7 @@ public class PathRAGQueryService : IPathRAGQueryService
                 EntityName = name,
                 EntityType = node.EntityType,
                 Description = node.Description ?? "UNKNOWN",
-                SourceId = node.SourceId,
+                SourceId = node.SourceId ?? string.Empty,
                 Rank = neighbors.Count()
             });
         }
@@ -797,8 +797,8 @@ public class PathRAGQueryService : IPathRAGQueryService
         int topK = 40,
         CancellationToken cancellationToken = default)
     {
-        var queryEmbedding = await _embeddingService.GenerateEmbeddingAsync(query, cancellationToken: cancellationToken);
-        var embeddingArray = queryEmbedding.ToArray();
+        var embeddingResult = await _embeddingGenerator.GenerateAsync([query], cancellationToken: cancellationToken);
+        var embeddingArray = embeddingResult[0].Vector.ToArray();
 
         // Search entity vectors and get full entity info
         var entityVectors = await _graphVectorRepository.SearchEntitiesByVectorAsync(embeddingArray, topK, cancellationToken);

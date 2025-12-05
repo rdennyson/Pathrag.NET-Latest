@@ -1,3 +1,4 @@
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.SemanticKernel;
@@ -22,7 +23,7 @@ public static class ServiceCollectionExtensions
 
         // Register Semantic Kernel
         var kernelBuilder = Kernel.CreateBuilder();
-        
+
         // Add Azure OpenAI Chat Completion
         if (!string.IsNullOrEmpty(azureOpenAISettings.ChatCompletion.Endpoint))
         {
@@ -33,25 +34,27 @@ public static class ServiceCollectionExtensions
                 modelId: azureOpenAISettings.ChatCompletion.ModelId);
         }
 
-        // Add Azure OpenAI Embeddings
+        // Add Azure OpenAI Embeddings using the new IEmbeddingGenerator interface
         if (!string.IsNullOrEmpty(azureOpenAISettings.Embedding.Endpoint))
         {
-            kernelBuilder.AddAzureOpenAITextEmbeddingGeneration(
+            kernelBuilder.AddAzureOpenAIEmbeddingGenerator(
                 deploymentName: azureOpenAISettings.Embedding.Deployment,
                 endpoint: azureOpenAISettings.Embedding.Endpoint,
                 apiKey: azureOpenAISettings.Embedding.ApiKey,
-                modelId: azureOpenAISettings.Embedding.ModelId);
+                modelId: azureOpenAISettings.Embedding.ModelId,
+                dimensions: azureOpenAISettings.Embedding.Dimensions);
         }
 
         var kernel = kernelBuilder.Build();
         services.AddSingleton(kernel);
         services.AddSingleton(kernel.GetRequiredService<Microsoft.SemanticKernel.ChatCompletion.IChatCompletionService>());
-        services.AddSingleton(kernel.GetRequiredService<Microsoft.SemanticKernel.Embeddings.ITextEmbeddingGenerationService>());
+        services.AddSingleton(kernel.GetRequiredService<IEmbeddingGenerator<string, Embedding<float>>>());
 
         // Register services
         services.AddScoped<IContentDecoderService, ContentDecoderService>();
         services.AddScoped<ITextChunkerService, TextChunkerService>();
         services.AddScoped<IEntityExtractionService, EntityExtractionService>();
+        services.AddScoped<IEntityMergingService, EntityMergingService>();
         services.AddScoped<IKeywordsExtractionService, KeywordsExtractionService>();
         services.AddScoped<IPathRAGQueryService, PathRAGQueryService>();
 

@@ -45,8 +45,10 @@ public class EntityMergingService : IEntityMergingService
         if (existingEntity != null)
         {
             alreadyEntityTypes.Add(existingEntity.EntityType);
-            alreadySourceIds.AddRange(SplitByGraphFieldSep(existingEntity.SourceId));
-            alreadyDescriptions.Add(existingEntity.Description);
+            if (!string.IsNullOrEmpty(existingEntity.SourceId))
+                alreadySourceIds.AddRange(SplitByGraphFieldSep(existingEntity.SourceId));
+            if (!string.IsNullOrEmpty(existingEntity.Description))
+                alreadyDescriptions.Add(existingEntity.Description);
         }
 
         // Determine entity type by most common (matching Python's Counter logic)
@@ -101,9 +103,12 @@ public class EntityMergingService : IEntityMergingService
         if (existingRel != null)
         {
             alreadyWeights.Add(existingRel.Weight);
-            alreadySourceIds.AddRange(SplitByGraphFieldSep(existingRel.SourceId));
-            alreadyDescriptions.Add(existingRel.Description);
-            alreadyKeywords.AddRange(SplitByGraphFieldSep(existingRel.Keywords));
+            if (!string.IsNullOrEmpty(existingRel.SourceId))
+                alreadySourceIds.AddRange(SplitByGraphFieldSep(existingRel.SourceId));
+            if (!string.IsNullOrEmpty(existingRel.Description))
+                alreadyDescriptions.Add(existingRel.Description);
+            if (!string.IsNullOrEmpty(existingRel.Keywords))
+                alreadyKeywords.AddRange(SplitByGraphFieldSep(existingRel.Keywords));
         }
 
         // Sum weights (matching Python)

@@ -1,5 +1,5 @@
 using MediatR;
-using Microsoft.SemanticKernel.Embeddings;
+using Microsoft.Extensions.AI;
 using PathRAG.NET.Core.Services;
 using PathRAG.NET.Core.Settings;
 using PathRAG.NET.Data.Graph.Interfaces;
@@ -27,7 +27,7 @@ public class UploadDocumentCommandHandler : IRequestHandler<UploadDocumentComman
     private readonly ITextChunkerService _textChunker;
     private readonly IEntityExtractionService _entityExtractor;
     private readonly IEntityMergingService _entityMergingService;
-    private readonly ITextEmbeddingGenerationService _embeddingService;
+    private readonly IEmbeddingGenerator<string, Embedding<float>> _embeddingGenerator;
     private readonly PathRAGSettings _settings;
 
     public UploadDocumentCommandHandler(
@@ -38,7 +38,7 @@ public class UploadDocumentCommandHandler : IRequestHandler<UploadDocumentComman
         ITextChunkerService textChunker,
         IEntityExtractionService entityExtractor,
         IEntityMergingService entityMergingService,
-        ITextEmbeddingGenerationService embeddingService,
+        IEmbeddingGenerator<string, Embedding<float>> embeddingGenerator,
         PathRAGSettings settings)
     {
         _documentRepository = documentRepository;
@@ -48,7 +48,7 @@ public class UploadDocumentCommandHandler : IRequestHandler<UploadDocumentComman
         _textChunker = textChunker;
         _entityExtractor = entityExtractor;
         _entityMergingService = entityMergingService;
-        _embeddingService = embeddingService;
+        _embeddingGenerator = embeddingGenerator;
         _settings = settings;
     }
 
@@ -85,7 +85,7 @@ public class UploadDocumentCommandHandler : IRequestHandler<UploadDocumentComman
             for (int i = 0; i < chunks.Count; i += _settings.EmbeddingBatchSize)
             {
                 var batch = chunks.Skip(i).Take(_settings.EmbeddingBatchSize).ToList();
-                var embeddings = await _embeddingService.GenerateEmbeddingsAsync(
+                var embeddings = await _embeddingGenerator.GenerateAsync(
                     batch.Select(c => c.Content).ToList(),
                     cancellationToken: cancellationToken);
 
@@ -98,7 +98,7 @@ public class UploadDocumentCommandHandler : IRequestHandler<UploadDocumentComman
                         Index = i + j,
                         Content = batch[j].Content,
                         TokenCount = batch[j].Tokens,
-                        Embedding = embeddings.ElementAt(j).ToArray()
+                        Embedding = embeddings[j].Vector.ToArray()
                     });
                 }
             }
@@ -171,8 +171,8 @@ public class UploadDocumentCommandHandler : IRequestHandler<UploadDocumentComman
             {
                 // Python format: content = dp["entity_name"] + dp["description"] (operate.py line 435)
                 var entityContent = entity.EntityName + entity.Description;
-                var embedding = await _embeddingService.GenerateEmbeddingAsync(
-                    entityContent,
+                var embeddingResult = await _embeddingGenerator.GenerateAsync(
+                    [entityContent],
                     cancellationToken: cancellationToken);
 
                 var entityVector = new EntityVector
@@ -180,7 +180,7 @@ public class UploadDocumentCommandHandler : IRequestHandler<UploadDocumentComman
                     Id = Guid.NewGuid(),
                     EntityName = entity.EntityName,
                     Content = entityContent,
-                    Embedding = embedding.ToArray()
+                    Embedding = embeddingResult[0].Vector.ToArray()
                 };
                 await _graphVectorRepository.UpsertEntityVectorAsync(entityVector, cancellationToken);
             }
@@ -191,8 +191,8 @@ public class UploadDocumentCommandHandler : IRequestHandler<UploadDocumentComman
             {
                 // Python format: content = dp["keywords"] + dp["src_id"] + dp["tgt_id"] + dp["description"]
                 var relContent = rel.Keywords + rel.SourceEntityName + rel.TargetEntityName + rel.Description;
-                var embedding = await _embeddingService.GenerateEmbeddingAsync(
-                    relContent,
+                var embeddingResult = await _embeddingGenerator.GenerateAsync(
+                    [relContent],
                     cancellationToken: cancellationToken);
 
                 var relationshipVector = new RelationshipVector
@@ -201,7 +201,7 @@ public class UploadDocumentCommandHandler : IRequestHandler<UploadDocumentComman
                     SourceEntityName = rel.SourceEntityName,
                     TargetEntityName = rel.TargetEntityName,
                     Content = relContent,
-                    Embedding = embedding.ToArray()
+                    Embedding = embeddingResult[0].Vector.ToArray()
                 };
                 await _graphVectorRepository.UpsertRelationshipVectorAsync(relationshipVector, cancellationToken);
             }
