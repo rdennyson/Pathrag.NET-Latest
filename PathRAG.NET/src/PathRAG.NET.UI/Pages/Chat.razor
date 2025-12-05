@@ -1,0 +1,156 @@
+@page "/chat"
+@page "/chat/{ThreadId:guid}"
+@inject IChatService ChatService
+@inject NavigationManager Navigation
+@inject MessageService MessageService
+
+<PageTitle>Chat - PathRAG.NET</PageTitle>
+
+<Row Gutter="16" Style="height: calc(100vh - 140px);">
+    <Col Span="6" Style="height: 100%; overflow-y: auto; border-right: 1px solid #f0f0f0;">
+        <div style="padding: 16px;">
+            <Button Type="@ButtonType.Primary" Block OnClick="@CreateNewThread" Icon="@IconType.Outline.Plus">
+                New Chat
+            </Button>
+        </div>
+        <Menu Mode="@MenuMode.Inline" SelectedKeys="@(new[] { ThreadId?.ToString() ?? "" })">
+            @if (_threads != null)
+            {
+                @foreach (var thread in _threads)
+                {
+                    <MenuItem Key="@thread.Id.ToString()" OnClick="@(() => SelectThread(thread.Id))">
+                        <Icon Type="message" Theme="outline" />
+                        <span>@(string.IsNullOrEmpty(thread.Title) ? "Untitled Chat" : thread.Title)</span>
+                    </MenuItem>
+                }
+            }
+        </Menu>
+    </Col>
+    <Col Span="18" Style="height: 100%; display: flex; flex-direction: column;">
+        @if (ThreadId == null)
+        {
+            <div style="flex: 1; display: flex; align-items: center; justify-content: center;">
+                <Empty Description="@("Select a chat or create a new one")" />
+            </div>
+        }
+        else
+        {
+            <div class="chat-messages" @ref="_messagesContainer">
+                @if (_messages != null)
+                {
+                    @foreach (var message in _messages)
+                    {
+                        <div class="message @message.Role">
+                            <div class="message-content">
+                                @message.Content
+                            </div>
+                            <div style="font-size: 12px; color: #999; margin-top: 4px;">
+                                @message.CreatedAt.ToString("HH:mm")
+                            </div>
+                        </div>
+                    }
+                }
+                @if (_isLoading)
+                {
+                    <div class="message assistant">
+                        <div class="message-content">
+                            <Spin size="small" /> Thinking...
+                        </div>
+                    </div>
+                }
+            </div>
+            <div class="chat-input">
+                <Space Direction="DirectionVHType.Horizontal" Style="width: 100%;">
+                    <SpaceItem Style="flex: 1;">
+                        <TextArea @bind-Value="@_inputMessage" 
+                                  Placeholder="Type your message..." 
+                                  AutoSize="@true"
+                                  OnPressEnter="@SendMessage"
+                                  Disabled="@_isLoading" />
+                    </SpaceItem>
+                    <SpaceItem>
+                        <Button Type="@ButtonType.Primary" 
+                                Icon="@IconType.Outline.Send" 
+                                OnClick="@SendMessage"
+                                Loading="@_isLoading"
+                                Disabled="@string.IsNullOrWhiteSpace(_inputMessage)">
+                            Send
+                        </Button>
+                    </SpaceItem>
+                </Space>
+            </div>
+        }
+    </Col>
+</Row>
+
+@code {
+    [Parameter] public Guid? ThreadId { get; set; }
+
+    private IEnumerable<ChatThreadDto>? _threads;
+    private IEnumerable<ChatMessageDto>? _messages;
+    private string _inputMessage = "";
+    private bool _isLoading;
+    private ElementReference _messagesContainer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadThreads();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (ThreadId.HasValue)
+        {
+            await LoadMessages();
+        }
+    }
+
+    private async Task LoadThreads()
+    {
+        _threads = await ChatService.GetThreadsAsync();
+    }
+
+    private async Task LoadMessages()
+    {
+        if (ThreadId.HasValue)
+        {
+            _messages = await ChatService.GetMessagesAsync(ThreadId.Value);
+        }
+    }
+
+    private async Task CreateNewThread()
+    {
+        var thread = await ChatService.CreateThreadAsync();
+        await LoadThreads();
+        Navigation.NavigateTo($"/chat/{thread.Id}");
+    }
+
+    private void SelectThread(Guid threadId)
+    {
+        Navigation.NavigateTo($"/chat/{threadId}");
+    }
+
+    private async Task SendMessage()
+    {
+        if (string.IsNullOrWhiteSpace(_inputMessage) || !ThreadId.HasValue) return;
+
+        var message = _inputMessage;
+        _inputMessage = "";
+        _isLoading = true;
+
+        try
+        {
+            await ChatService.SendMessageAsync(ThreadId.Value, message);
+            await LoadMessages();
+        }
+        catch (Exception ex)
+        {
+            await MessageService.Error($"Failed to send message: {ex.Message}");
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+}
+

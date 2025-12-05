@@ -1,0 +1,164 @@
+@page "/graph"
+@inject IGraphService GraphService
+@inject MessageService MessageService
+
+<PageTitle>Knowledge Graph - PathRAG.NET</PageTitle>
+
+<PageHeader Title="Knowledge Graph" SubTitle="Visualize and explore your knowledge graph">
+    <PageHeaderExtra>
+        <Space>
+            <SpaceItem>
+                <AntDesign.InputNumber @bind-Value="@_limit" Min="10" Max="500" Style="width: 100px;" TValue="int" />
+            </SpaceItem>
+            <SpaceItem>
+                <Button Type="@ButtonType.Primary" OnClick="@LoadGraph" Loading="@_loading">
+                    Refresh
+                </Button>
+            </SpaceItem>
+        </Space>
+    </PageHeaderExtra>
+</PageHeader>
+
+<Row Gutter="16">
+    <Col Span="18">
+        <Card Title="Graph Visualization" Style="height: calc(100vh - 250px);">
+            @if (_loading)
+            {
+                <div style="display: flex; justify-content: center; align-items: center; height: 100%;">
+                    <Spin Size="large" />
+                </div>
+            }
+            else if (_graph == null || !_graph.Nodes.Any())
+            {
+                <Empty Description="@("No entities in knowledge graph. Upload documents to build the graph.")" />
+            }
+            else
+            {
+                <div style="padding: 16px;">
+                    <Alert Type="@AlertType.Info"
+                           Message="@($"Showing {_graph.Nodes.Count()} nodes and {_graph.Edges.Count()} edges")"
+                           ShowIcon="true" />
+                    <Divider />
+                    <Table TItem="GraphNodeDto" DataSource="@_graph.Nodes.Take(20)" Size="@TableSize.Small">
+                        <PropertyColumn Property="c => c.Label" Title="Entity" />
+                        <PropertyColumn Property="c => c.Type" Title="Type">
+                            <Tag Color="@GetTypeColor(context.Type)">@context.Type</Tag>
+                        </PropertyColumn>
+                        <PropertyColumn Property="c => c.Description" Title="Description" Ellipsis />
+                    </Table>
+                </div>
+            }
+        </Card>
+    </Col>
+    <Col Span="6">
+        <Card Title="Query Graph" Style="margin-bottom: 16px;">
+            <Form Model="@_queryModel" OnFinish="@QueryGraph">
+                <FormItem Label="Query">
+                    <TextArea @bind-Value="@_queryModel.Query" Rows="3" Placeholder="Enter your query..." />
+                </FormItem>
+                <FormItem>
+                    <Button Type="@ButtonType.Primary" HtmlType="submit" Block Loading="@_querying">
+                        Search Graph
+                    </Button>
+                </FormItem>
+            </Form>
+        </Card>
+        
+        <Card Title="Statistics">
+            @if (_stats != null)
+            {
+                <Descriptions Column="1" Bordered Size="@DescriptionsSize.Small">
+                    <DescriptionsItem Title="Total Entities">@_stats.TotalEntities</DescriptionsItem>
+                    <DescriptionsItem Title="Total Relationships">@_stats.TotalRelationships</DescriptionsItem>
+                </Descriptions>
+                
+                @if (_stats.EntityTypeDistribution.Any())
+                {
+                    <Divider>Entity Types</Divider>
+                    @foreach (var kvp in _stats.EntityTypeDistribution)
+                    {
+                        <div style="margin-bottom: 8px;">
+                            <Tag Color="@GetTypeColor(kvp.Key)">@kvp.Key</Tag>
+                            <Text>@kvp.Value</Text>
+                        </div>
+                    }
+                }
+            }
+        </Card>
+    </Col>
+</Row>
+
+@code {
+    private KnowledgeGraphDto? _graph;
+    private GraphStatsDto? _stats;
+    private bool _loading = true;
+    private bool _querying;
+    private int _limit = 100;
+    private QueryModel _queryModel = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadGraph();
+        await LoadStats();
+    }
+
+    private async Task LoadGraph()
+    {
+        _loading = true;
+        try
+        {
+            _graph = await GraphService.GetKnowledgeGraphAsync(_limit);
+        }
+        catch (Exception ex)
+        {
+            await MessageService.Error($"Failed to load graph: {ex.Message}");
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task LoadStats()
+    {
+        _stats = await GraphService.GetGraphStatsAsync();
+    }
+
+    private async Task QueryGraph()
+    {
+        if (string.IsNullOrWhiteSpace(_queryModel.Query)) return;
+
+        _querying = true;
+        try
+        {
+            _graph = await GraphService.QueryGraphAsync(_queryModel.Query);
+            await MessageService.Success($"Found {_graph.Nodes.Count()} relevant entities");
+        }
+        catch (Exception ex)
+        {
+            await MessageService.Error($"Query failed: {ex.Message}");
+        }
+        finally
+        {
+            _querying = false;
+        }
+    }
+
+    private static string GetTypeColor(string type) => type.ToLower() switch
+    {
+        "person" => "blue",
+        "organization" => "green",
+        "geo" => "orange",
+        "event" => "purple",
+        "technology" => "cyan",
+        "product" => "magenta",
+        "concept" => "gold",
+        _ => "default"
+    };
+
+    private class QueryModel
+    {
+        public string Query { get; set; } = "";
+    }
+}
+

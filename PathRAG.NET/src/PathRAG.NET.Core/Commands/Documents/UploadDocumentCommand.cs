@@ -1,0 +1,225 @@
+using MediatR;
+using Microsoft.SemanticKernel.Embeddings;
+using PathRAG.NET.Core.Services;
+using PathRAG.NET.Core.Settings;
+using PathRAG.NET.Data.Graph.Interfaces;
+using PathRAG.NET.Data.Repositories;
+using PathRAG.NET.Models.DTOs;
+using PathRAG.NET.Models.Entities;
+
+namespace PathRAG.NET.Core.Commands.Documents;
+
+public record UploadDocumentCommand(
+    string FileName,
+    string ContentType,
+    Stream FileStream
+) : IRequest<DocumentUploadResponse>;
+
+/// <summary>
+/// Document upload handler matching Python PathRAG's extract_entities flow in operate.py
+/// </summary>
+public class UploadDocumentCommandHandler : IRequestHandler<UploadDocumentCommand, DocumentUploadResponse>
+{
+    private readonly IDocumentRepository _documentRepository;
+    private readonly IDocumentChunkRepository _chunkRepository;
+    private readonly IGraphVectorRepository _graphVectorRepository;
+    private readonly IContentDecoderService _contentDecoder;
+    private readonly ITextChunkerService _textChunker;
+    private readonly IEntityExtractionService _entityExtractor;
+    private readonly IEntityMergingService _entityMergingService;
+    private readonly ITextEmbeddingGenerationService _embeddingService;
+    private readonly PathRAGSettings _settings;
+
+    public UploadDocumentCommandHandler(
+        IDocumentRepository documentRepository,
+        IDocumentChunkRepository chunkRepository,
+        IGraphVectorRepository graphVectorRepository,
+        IContentDecoderService contentDecoder,
+        ITextChunkerService textChunker,
+        IEntityExtractionService entityExtractor,
+        IEntityMergingService entityMergingService,
+        ITextEmbeddingGenerationService embeddingService,
+        PathRAGSettings settings)
+    {
+        _documentRepository = documentRepository;
+        _chunkRepository = chunkRepository;
+        _graphVectorRepository = graphVectorRepository;
+        _contentDecoder = contentDecoder;
+        _textChunker = textChunker;
+        _entityExtractor = entityExtractor;
+        _entityMergingService = entityMergingService;
+        _embeddingService = embeddingService;
+        _settings = settings;
+    }
+
+    public async Task<DocumentUploadResponse> Handle(UploadDocumentCommand request, CancellationToken cancellationToken)
+    {
+        // Step 1: Create document record
+        var document = new Document
+        {
+            Id = Guid.NewGuid(),
+            Name = request.FileName,
+            ContentType = request.ContentType,
+            FileSize = request.FileStream.Length,
+            Status = "processing"
+        };
+        await _documentRepository.AddAsync(document, cancellationToken);
+
+        try
+        {
+            // Step 2: Decode content
+            var text = await _contentDecoder.DecodeAsync(request.FileStream, request.ContentType, cancellationToken);
+
+            // Step 3: Chunk the text
+            var chunks = _textChunker.ChunkByTokenSize(
+                text,
+                document.Id.ToString(),
+                _settings.MaxTokensPerParagraph,
+                _settings.OverlapTokens
+            ).ToList();
+
+            var totalTokens = chunks.Sum(c => c.Tokens);
+
+            // Step 4: Generate embeddings for chunks (in batches) and store in DocumentChunks
+            var documentChunks = new List<DocumentChunk>();
+            for (int i = 0; i < chunks.Count; i += _settings.EmbeddingBatchSize)
+            {
+                var batch = chunks.Skip(i).Take(_settings.EmbeddingBatchSize).ToList();
+                var embeddings = await _embeddingService.GenerateEmbeddingsAsync(
+                    batch.Select(c => c.Content).ToList(),
+                    cancellationToken: cancellationToken);
+
+                for (int j = 0; j < batch.Count; j++)
+                {
+                    documentChunks.Add(new DocumentChunk
+                    {
+                        Id = Guid.NewGuid(),
+                        DocumentId = document.Id,
+                        Index = i + j,
+                        Content = batch[j].Content,
+                        TokenCount = batch[j].Tokens,
+                        Embedding = embeddings.ElementAt(j).ToArray()
+                    });
+                }
+            }
+            await _chunkRepository.AddRangeAsync(documentChunks, cancellationToken);
+
+            // Step 5: Extract entities and relationships from each chunk
+            // (matching Python PathRAG's extract_entities flow in operate.py)
+            // First collect all entities/relationships, then merge duplicates
+            var maybeNodes = new Dictionary<string, List<ExtractedEntityDto>>();
+            var maybeEdges = new Dictionary<(string, string), List<ExtractedRelationshipDto>>();
+
+            foreach (var chunk in chunks)
+            {
+                var (entities, relationships) = await _entityExtractor.ExtractEntitiesAndRelationshipsAsync(
+                    chunk.Content, chunk.Id, cancellationToken);
+
+                // Group entities by name (matching Python's maybe_nodes dict)
+                foreach (var entity in entities)
+                {
+                    if (!maybeNodes.ContainsKey(entity.EntityName))
+                        maybeNodes[entity.EntityName] = [];
+                    maybeNodes[entity.EntityName].Add(entity);
+                }
+
+                // Group relationships by (src, tgt) pair (matching Python's maybe_edges dict)
+                foreach (var rel in relationships)
+                {
+                    var key = (rel.SourceEntity, rel.TargetEntity);
+                    if (!maybeEdges.ContainsKey(key))
+                        maybeEdges[key] = [];
+                    maybeEdges[key].Add(rel);
+                }
+            }
+
+            // Step 6: Merge and upsert entities (matching Python's _merge_nodes_then_upsert)
+            var allEntitiesData = new List<GraphEntity>();
+            foreach (var (entityName, entityList) in maybeNodes)
+            {
+                // Use the first entity as base, merging service handles the rest
+                var mergedEntity = await _entityMergingService.MergeAndUpsertEntityAsync(
+                    entityList.First(), cancellationToken);
+
+                // If multiple extractions for same entity, merge them all
+                foreach (var entity in entityList.Skip(1))
+                {
+                    mergedEntity = await _entityMergingService.MergeAndUpsertEntityAsync(entity, cancellationToken);
+                }
+                allEntitiesData.Add(mergedEntity);
+            }
+
+            // Step 7: Merge and upsert relationships (matching Python's _merge_edges_then_upsert)
+            var allRelationshipsData = new List<GraphRelationship>();
+            foreach (var ((srcId, tgtId), relList) in maybeEdges)
+            {
+                // Use the first relationship as base, merging service handles the rest
+                var mergedRel = await _entityMergingService.MergeAndUpsertRelationshipAsync(
+                    relList.First(), cancellationToken);
+
+                // If multiple extractions for same edge, merge them all
+                foreach (var rel in relList.Skip(1))
+                {
+                    mergedRel = await _entityMergingService.MergeAndUpsertRelationshipAsync(rel, cancellationToken);
+                }
+                allRelationshipsData.Add(mergedRel);
+            }
+
+            // Step 8: Store entity embeddings in EntityVectors table
+            // (matching Python PathRAG's entities_vdb.upsert in operate.py lines 432-440)
+            foreach (var entity in allEntitiesData)
+            {
+                // Python format: content = dp["entity_name"] + dp["description"] (operate.py line 435)
+                var entityContent = entity.EntityName + entity.Description;
+                var embedding = await _embeddingService.GenerateEmbeddingAsync(
+                    entityContent,
+                    cancellationToken: cancellationToken);
+
+                var entityVector = new EntityVector
+                {
+                    Id = Guid.NewGuid(),
+                    EntityName = entity.EntityName,
+                    Content = entityContent,
+                    Embedding = embedding.ToArray()
+                };
+                await _graphVectorRepository.UpsertEntityVectorAsync(entityVector, cancellationToken);
+            }
+
+            // Step 9: Store relationship embeddings in RelationshipVectors table
+            // (matching Python PathRAG's relationships_vdb.upsert in operate.py lines 442-454)
+            foreach (var rel in allRelationshipsData)
+            {
+                // Python format: content = dp["keywords"] + dp["src_id"] + dp["tgt_id"] + dp["description"]
+                var relContent = rel.Keywords + rel.SourceEntityName + rel.TargetEntityName + rel.Description;
+                var embedding = await _embeddingService.GenerateEmbeddingAsync(
+                    relContent,
+                    cancellationToken: cancellationToken);
+
+                var relationshipVector = new RelationshipVector
+                {
+                    Id = Guid.NewGuid(),
+                    SourceEntityName = rel.SourceEntityName,
+                    TargetEntityName = rel.TargetEntityName,
+                    Content = relContent,
+                    Embedding = embedding.ToArray()
+                };
+                await _graphVectorRepository.UpsertRelationshipVectorAsync(relationshipVector, cancellationToken);
+            }
+
+            // Step 10: Update document status
+            document.Status = "completed";
+            document.ProcessedAt = DateTimeOffset.UtcNow;
+            await _documentRepository.UpdateAsync(document, cancellationToken);
+
+            return new DocumentUploadResponse(document.Id, "Document processed successfully", totalTokens);
+        }
+        catch (Exception ex)
+        {
+            document.Status = "failed";
+            document.ErrorMessage = ex.Message;
+            await _documentRepository.UpdateAsync(document, cancellationToken);
+            throw;
+        }
+    }
+}
+

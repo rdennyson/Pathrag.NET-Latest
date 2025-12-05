@@ -1,0 +1,155 @@
+@page "/documents"
+@inject IDocumentService DocumentService
+@inject MessageService MessageService
+
+<PageTitle>Documents - PathRAG.NET</PageTitle>
+
+<PageHeader Title="Documents" SubTitle="Upload and manage your documents">
+    <PageHeaderExtra>
+        <Button Type="@ButtonType.Primary" Icon="@IconType.Outline.Upload" OnClick="@(() => _uploadVisible = true)">
+            Upload Document
+        </Button>
+    </PageHeaderExtra>
+</PageHeader>
+
+@if (_loading)
+{
+    <div style="text-align: center; padding: 50px;">
+        <Spin Size="large" />
+    </div>
+}
+else if (_documents == null || !_documents.Any())
+{
+    <Empty Description="@("No documents uploaded yet")">
+        <ChildContent>
+            <Button Type="@ButtonType.Primary" OnClick="@(() => _uploadVisible = true)">Upload Your First Document</Button>
+        </ChildContent>
+    </Empty>
+}
+else
+{
+    <Row Gutter="(16, 16)">
+        @foreach (var doc in _documents)
+        {
+            <AntDesign.Col Xs="24" Sm="12" Md="8" Lg="6">
+                <Card Class="document-card" Hoverable>
+                    <CardMeta Title="@doc.Name" Description="@GetDocumentDescription(doc)" />
+                    <div style="margin-top: 16px;">
+                        <Tag Color="@GetStatusColor(doc.Status)">@doc.Status</Tag>
+                        <Popconfirm Title="Are you sure you want to delete this document?"
+                                    OnConfirm="@(() => DeleteDocument(doc.Id))"
+                                    OkText="Yes"
+                                    CancelText="No">
+                            <Button Type="@ButtonType.Text" Danger Icon="@IconType.Outline.Delete" />
+                        </Popconfirm>
+                    </div>
+                </Card>
+            </AntDesign.Col>
+        }
+    </Row>
+}
+
+<Modal Title="Upload Document"
+       Visible="@_uploadVisible"
+       OnCancel="@(() => _uploadVisible = false)"
+       Footer="null">
+    <InputFile OnChange="@OnFileSelected" accept=".pdf,.docx,.txt,.md,.html" />
+    @if (_selectedFile != null)
+    {
+        <div style="margin-top: 16px;">
+            <Text>Selected: @_selectedFile.Name (@FormatFileSize(_selectedFile.Size))</Text>
+        </div>
+        <div style="margin-top: 16px;">
+            <Button Type="@ButtonType.Primary" 
+                    Loading="@_uploading" 
+                    OnClick="@UploadFile"
+                    Block>
+                Upload and Process
+            </Button>
+        </div>
+    }
+</Modal>
+
+@code {
+    private IEnumerable<DocumentDto>? _documents;
+    private bool _loading = true;
+    private bool _uploadVisible;
+    private bool _uploading;
+    private IBrowserFile? _selectedFile;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDocuments();
+    }
+
+    private async Task LoadDocuments()
+    {
+        _loading = true;
+        _documents = await DocumentService.GetDocumentsAsync();
+        _loading = false;
+    }
+
+    private void OnFileSelected(InputFileChangeEventArgs e)
+    {
+        _selectedFile = e.File;
+    }
+
+    private async Task UploadFile()
+    {
+        if (_selectedFile == null) return;
+
+        _uploading = true;
+        try
+        {
+            using var stream = _selectedFile.OpenReadStream(maxAllowedSize: 50 * 1024 * 1024);
+            await DocumentService.UploadDocumentAsync(stream, _selectedFile.Name, _selectedFile.ContentType);
+            await MessageService.Success("Document uploaded and processing started!");
+            _uploadVisible = false;
+            _selectedFile = null;
+            await LoadDocuments();
+        }
+        catch (Exception ex)
+        {
+            await MessageService.Error($"Upload failed: {ex.Message}");
+        }
+        finally
+        {
+            _uploading = false;
+        }
+    }
+
+    private async Task DeleteDocument(Guid id)
+    {
+        var success = await DocumentService.DeleteDocumentAsync(id);
+        if (success)
+        {
+            await MessageService.Success("Document deleted successfully");
+            await LoadDocuments();
+        }
+        else
+        {
+            await MessageService.Error("Failed to delete document");
+        }
+    }
+
+    private static string GetDocumentDescription(DocumentDto doc) =>
+        $"Size: {FormatFileSize(doc.FileSize)} | Chunks: {doc.ChunkCount}";
+
+    private static string GetStatusColor(string status) => status switch
+    {
+        "completed" => "green",
+        "processing" => "blue",
+        "failed" => "red",
+        _ => "default"
+    };
+
+    private static string FormatFileSize(long bytes)
+    {
+        string[] sizes = { "B", "KB", "MB", "GB" };
+        int order = 0;
+        double size = bytes;
+        while (size >= 1024 && order < sizes.Length - 1) { order++; size /= 1024; }
+        return $"{size:0.##} {sizes[order]}";
+    }
+}
+

@@ -1,0 +1,55 @@
+@inherits LayoutComponentBase
+
+<AntDesign.ProLayout.BasicLayout
+    Logo="@("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiMxODkwZmYiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNMTIgMmwxMCA2djhsLTEwIDYtMTAtNlY4bDEwLTZ6Ii8+PHBhdGggZD0iTTEyIDIyVjEyIi8+PHBhdGggZD0iTTIyIDhsLTEwIDQtMTAtNCIvPjwvc3ZnPg==")"
+    Title="PathRAG.NET"
+    MenuData="@_menuData"
+    @bind-Collapsed="@_collapsed">
+    <ChildContent>
+        <div style="padding: 24px; min-height: calc(100vh - 112px);">
+            @Body
+        </div>
+    </ChildContent>
+    <FooterRender>
+        <div style="text-align: center; padding: 16px 0;">
+            PathRAG.NET - Knowledge Graph RAG System
+        </div>
+    </FooterRender>
+</AntDesign.ProLayout.BasicLayout>
+
+@code {
+    private bool _collapsed;
+
+    private readonly AntDesign.ProLayout.MenuDataItem[] _menuData = new[]
+    {
+        new AntDesign.ProLayout.MenuDataItem
+        {
+            Path = "/",
+            Name = "Dashboard",
+            Key = "dashboard",
+            Icon = "dashboard"
+        },
+        new AntDesign.ProLayout.MenuDataItem
+        {
+            Path = "/documents",
+            Name = "Documents",
+            Key = "documents",
+            Icon = "file-text"
+        },
+        new AntDesign.ProLayout.MenuDataItem
+        {
+            Path = "/chat",
+            Name = "Chat",
+            Key = "chat",
+            Icon = "message"
+        },
+        new AntDesign.ProLayout.MenuDataItem
+        {
+            Path = "/graph",
+            Name = "Knowledge Graph",
+            Key = "graph",
+            Icon = "apartment"
+        }
+    };
+}
+

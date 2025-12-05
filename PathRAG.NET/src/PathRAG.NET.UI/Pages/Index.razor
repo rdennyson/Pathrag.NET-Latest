@@ -1,0 +1,103 @@
+@page "/"
+@inject IDocumentService DocumentService
+@inject IGraphService GraphService
+
+<PageTitle>Dashboard - PathRAG.NET</PageTitle>
+
+<PageHeader Title="Dashboard" SubTitle="Knowledge Graph RAG System Overview" />
+
+<Row Gutter="16">
+    <Col Span="6">
+        <Card Class="stats-card">
+            <Statistic Title="Total Documents" Value="@_documentCount" Prefix="@("<Icon Type=\"file-text\" />")"/>
+        </Card>
+    </Col>
+    <Col Span="6">
+        <Card Class="stats-card">
+            <Statistic Title="Total Entities" Value="@_stats?.TotalEntities" Prefix="@("<Icon Type=\"node-index\" />")"/>
+        </Card>
+    </Col>
+    <Col Span="6">
+        <Card Class="stats-card">
+            <Statistic Title="Total Relationships" Value="@_stats?.TotalRelationships" Prefix="@("<Icon Type=\"api\" />")"/>
+        </Card>
+    </Col>
+    <Col Span="6">
+        <Card Class="stats-card">
+            <Statistic Title="Entity Types" Value="@(_stats?.EntityTypeDistribution?.Count ?? 0)" Prefix="@("<Icon Type=\"tags\" />")"/>
+        </Card>
+    </Col>
+</Row>
+
+<Divider />
+
+<Row Gutter="16">
+    <AntDesign.Col Span="12">
+        <Card Title="Recent Documents">
+            <Extra>
+                <a href="/documents">View All</a>
+            </Extra>
+            <Body>
+                @if (_documents == null)
+                {
+                    <Spin />
+                }
+                else if (!_documents.Any())
+                {
+                    <Empty Description="@("No documents uploaded yet")" />
+                }
+                else
+                {
+                    <AntList DataSource="@_documents.Take(5)" TItem="DocumentDto">
+                        <ListItem>
+                            <ListItemMeta Title="@context.Name" Description="@($"Status: {context.Status} | Size: {FormatFileSize(context.FileSize)}")" />
+                        </ListItem>
+                    </AntList>
+                }
+            </Body>
+        </Card>
+    </AntDesign.Col>
+    <AntDesign.Col Span="12">
+        <Card Title="Entity Type Distribution">
+            @if (_stats?.EntityTypeDistribution == null || !_stats.EntityTypeDistribution.Any())
+            {
+                <Empty Description="@("No entities in knowledge graph")" />
+            }
+            else
+            {
+                <AntList DataSource="@_stats.EntityTypeDistribution" TItem="KeyValuePair<string, int>">
+                    <ListItem>
+                        <ListItemMeta Title="@context.Key" Description="@($"{context.Value} entities")" />
+                    </ListItem>
+                </AntList>
+            }
+        </Card>
+    </AntDesign.Col>
+</Row>
+
+@code {
+    private IEnumerable<DocumentDto>? _documents;
+    private GraphStatsDto? _stats;
+    private int _documentCount;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _documents = await DocumentService.GetDocumentsAsync();
+        _documentCount = _documents?.Count() ?? 0;
+        _stats = await GraphService.GetGraphStatsAsync();
+    }
+
+    private static string FormatFileSize(long bytes)
+    {
+        string[] sizes = { "B", "KB", "MB", "GB" };
+        int order = 0;
+        double size = bytes;
+        while (size >= 1024 && order < sizes.Length - 1)
+        {
+            order++;
+            size /= 1024;
+        }
+        return $"{size:0.##} {sizes[order]}";
+    }
+}
+
