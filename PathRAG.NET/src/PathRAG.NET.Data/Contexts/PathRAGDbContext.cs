@@ -9,8 +9,11 @@ namespace PathRAG.NET.Data.Contexts;
 /// </summary>
 public class PathRAGDbContext : DbContext
 {
-    public PathRAGDbContext(DbContextOptions<PathRAGDbContext> options) : base(options)
+    private readonly string _schemaName;
+
+    public PathRAGDbContext(DbContextOptions<PathRAGDbContext> options, PathRAGDataSettings? settings = null) : base(options)
     {
+        _schemaName = settings?.SchemaName ?? "PathRAG";
     }
 
     public DbSet<Document> Documents => Set<Document>();
@@ -22,17 +25,20 @@ public class PathRAGDbContext : DbContext
     {
         base.OnModelCreating(modelBuilder);
 
+        // Set default schema for all tables
+        modelBuilder.HasDefaultSchema(_schemaName);
+
         // Document configuration
         modelBuilder.Entity<Document>(entity =>
         {
-            entity.ToTable("Documents");
+            entity.ToTable("Documents", _schemaName);
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).HasDefaultValueSql("NEWSEQUENTIALID()");
             entity.Property(e => e.Name).IsRequired().HasMaxLength(255);
             entity.Property(e => e.ContentType).HasMaxLength(100);
             entity.Property(e => e.Status).IsRequired().HasMaxLength(50).HasDefaultValue("pending");
             entity.Property(e => e.CreationDate).HasDefaultValueSql("SYSDATETIMEOFFSET()");
-            
+
             entity.HasMany(e => e.Chunks)
                   .WithOne(c => c.Document)
                   .HasForeignKey(c => c.DocumentId)
@@ -42,7 +48,7 @@ public class PathRAGDbContext : DbContext
         // DocumentChunk configuration with Vector column
         modelBuilder.Entity<DocumentChunk>(entity =>
         {
-            entity.ToTable("DocumentChunks");
+            entity.ToTable("DocumentChunks", _schemaName);
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).HasDefaultValueSql("NEWSEQUENTIALID()");
             entity.Property(e => e.Content).IsRequired();
@@ -54,12 +60,12 @@ public class PathRAGDbContext : DbContext
         // ChatThread configuration
         modelBuilder.Entity<ChatThread>(entity =>
         {
-            entity.ToTable("ChatThreads");
+            entity.ToTable("ChatThreads", _schemaName);
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).HasDefaultValueSql("NEWSEQUENTIALID()");
             entity.Property(e => e.Title).IsRequired().HasMaxLength(500);
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("SYSDATETIMEOFFSET()");
-            
+
             entity.HasMany(e => e.Messages)
                   .WithOne(m => m.Thread)
                   .HasForeignKey(m => m.ThreadId)
@@ -69,7 +75,7 @@ public class PathRAGDbContext : DbContext
         // ChatMessage configuration
         modelBuilder.Entity<ChatMessage>(entity =>
         {
-            entity.ToTable("ChatMessages");
+            entity.ToTable("ChatMessages", _schemaName);
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).HasDefaultValueSql("NEWSEQUENTIALID()");
             entity.Property(e => e.Role).IsRequired().HasMaxLength(20);

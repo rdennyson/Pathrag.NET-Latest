@@ -14,11 +14,17 @@ public class SqlServerGraphRepository : IGraphRepository
 {
     private readonly string _connectionString;
     private readonly int _embeddingDimensions;
+    private readonly string _schemaName;
+
+    // Schema-qualified table names
+    private string GraphEntities => $"[{_schemaName}].[GraphEntities]";
+    private string GraphRelationships => $"[{_schemaName}].[GraphRelationships]";
 
     public SqlServerGraphRepository(GraphSettings settings)
     {
         _connectionString = settings.ConnectionString ?? throw new ArgumentNullException(nameof(settings.ConnectionString));
         _embeddingDimensions = settings.EmbeddingDimensions;
+        _schemaName = settings.SchemaName ?? "PathRAG";
     }
 
     private SqlConnection CreateConnection() => new(_connectionString);
@@ -28,11 +34,11 @@ public class SqlServerGraphRepository : IGraphRepository
     public async Task<GraphEntity?> GetEntityByNameAsync(string entityName, CancellationToken cancellationToken = default)
     {
         using var connection = CreateConnection();
-        const string sql = @"
+        var sql = $@"
             SELECT
                 CAST($node_id AS NVARCHAR(1000)) AS NodeId,
                 Id, EntityName, EntityType, Description, SourceId, CreatedAt
-            FROM GraphEntities
+            FROM {GraphEntities}
             WHERE EntityName = @EntityName";
 
         var result = await connection.QueryFirstOrDefaultAsync<GraphEntityDto>(sql, new { EntityName = entityName.ToUpperInvariant() });
@@ -42,11 +48,11 @@ public class SqlServerGraphRepository : IGraphRepository
     public async Task<GraphEntity?> GetEntityByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         using var connection = CreateConnection();
-        const string sql = @"
+        var sql = $@"
             SELECT
                 CAST($node_id AS NVARCHAR(1000)) AS NodeId,
                 Id, EntityName, EntityType, Description, SourceId, CreatedAt
-            FROM GraphEntities
+            FROM {GraphEntities}
             WHERE Id = @Id";
 
         var result = await connection.QueryFirstOrDefaultAsync<GraphEntityDto>(sql, new { Id = id });
@@ -56,11 +62,11 @@ public class SqlServerGraphRepository : IGraphRepository
     public async Task<IEnumerable<GraphEntity>> GetAllEntitiesAsync(int limit = 100, CancellationToken cancellationToken = default)
     {
         using var connection = CreateConnection();
-        const string sql = @"
+        var sql = $@"
             SELECT TOP (@Limit)
                 CAST($node_id AS NVARCHAR(1000)) AS NodeId,
                 Id, EntityName, EntityType, Description, SourceId, CreatedAt
-            FROM GraphEntities
+            FROM {GraphEntities}
             ORDER BY CreatedAt DESC";
 
         var results = await connection.QueryAsync<GraphEntityDto>(sql, new { Limit = limit });
@@ -71,11 +77,11 @@ public class SqlServerGraphRepository : IGraphRepository
     {
         using var connection = CreateConnection();
         var normalizedNames = entityNames.Select(n => n.ToUpperInvariant()).ToList();
-        const string sql = @"
+        var sql = $@"
             SELECT
                 CAST($node_id AS NVARCHAR(1000)) AS NodeId,
                 Id, EntityName, EntityType, Description, SourceId, CreatedAt
-            FROM GraphEntities
+            FROM {GraphEntities}
             WHERE EntityName IN @EntityNames";
 
         var results = await connection.QueryAsync<GraphEntityDto>(sql, new { EntityNames = normalizedNames });
@@ -88,8 +94,8 @@ public class SqlServerGraphRepository : IGraphRepository
         entity.EntityName = entity.EntityName.ToUpperInvariant();
         entity.CreatedAt = entity.CreatedAt == default ? DateTimeOffset.UtcNow : entity.CreatedAt;
 
-        const string sql = @"
-            MERGE GraphEntities AS target
+        var sql = $@"
+            MERGE {GraphEntities} AS target
             USING (SELECT @Id AS Id) AS source
             ON target.EntityName = @EntityName
             WHEN MATCHED THEN
@@ -105,7 +111,7 @@ public class SqlServerGraphRepository : IGraphRepository
             SELECT
                 CAST($node_id AS NVARCHAR(1000)) AS NodeId,
                 Id, EntityName, EntityType, Description, SourceId, CreatedAt
-            FROM GraphEntities WHERE EntityName = @EntityName;";
+            FROM {GraphEntities} WHERE EntityName = @EntityName;";
 
         var result = await connection.QueryFirstOrDefaultAsync<GraphEntityDto>(sql, new
         {
@@ -134,7 +140,7 @@ public class SqlServerGraphRepository : IGraphRepository
     public async Task<bool> EntityExistsAsync(string entityName, CancellationToken cancellationToken = default)
     {
         using var connection = CreateConnection();
-        const string sql = "SELECT COUNT(1) FROM GraphEntities WHERE EntityName = @EntityName";
+        var sql = $"SELECT COUNT(1) FROM {GraphEntities} WHERE EntityName = @EntityName";
         var count = await connection.ExecuteScalarAsync<int>(sql, new { EntityName = entityName.ToUpperInvariant() });
         return count > 0;
     }
@@ -142,7 +148,7 @@ public class SqlServerGraphRepository : IGraphRepository
     public async Task DeleteEntityAsync(string entityName, CancellationToken cancellationToken = default)
     {
         using var connection = CreateConnection();
-        const string sql = "DELETE FROM GraphEntities WHERE EntityName = @EntityName";
+        var sql = $"DELETE FROM {GraphEntities} WHERE EntityName = @EntityName";
         await connection.ExecuteAsync(sql, new { EntityName = entityName.ToUpperInvariant() });
     }
 
@@ -153,12 +159,12 @@ public class SqlServerGraphRepository : IGraphRepository
     public async Task<GraphRelationship?> GetRelationshipAsync(string sourceEntity, string targetEntity, CancellationToken cancellationToken = default)
     {
         using var connection = CreateConnection();
-        const string sql = @"
+        var sql = $@"
             SELECT
                 CAST(r.$edge_id AS NVARCHAR(1000)) AS EdgeId,
                 r.Id, r.SourceEntityName, r.TargetEntityName, r.Weight,
                 r.Description, r.Keywords, r.SourceId, r.CreatedAt
-            FROM GraphRelationships r, GraphEntities src, GraphEntities tgt
+            FROM {GraphRelationships} r, {GraphEntities} src, {GraphEntities} tgt
             WHERE MATCH(src-(r)->tgt)
             AND src.EntityName = @SourceEntity
             AND tgt.EntityName = @TargetEntity";
@@ -174,12 +180,12 @@ public class SqlServerGraphRepository : IGraphRepository
     public async Task<GraphRelationship?> GetRelationshipByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         using var connection = CreateConnection();
-        const string sql = @"
+        var sql = $@"
             SELECT
                 CAST($edge_id AS NVARCHAR(1000)) AS EdgeId,
                 Id, SourceEntityName, TargetEntityName, Weight,
                 Description, Keywords, SourceId, CreatedAt
-            FROM GraphRelationships
+            FROM {GraphRelationships}
             WHERE Id = @Id";
 
         var result = await connection.QueryFirstOrDefaultAsync<GraphRelationshipDto>(sql, new { Id = id });
@@ -189,12 +195,12 @@ public class SqlServerGraphRepository : IGraphRepository
     public async Task<IEnumerable<GraphRelationship>> GetAllRelationshipsAsync(int limit = 100, CancellationToken cancellationToken = default)
     {
         using var connection = CreateConnection();
-        const string sql = @"
+        var sql = $@"
             SELECT TOP (@Limit)
                 CAST($edge_id AS NVARCHAR(1000)) AS EdgeId,
                 Id, SourceEntityName, TargetEntityName, Weight,
                 Description, Keywords, SourceId, CreatedAt
-            FROM GraphRelationships
+            FROM {GraphRelationships}
             ORDER BY CreatedAt DESC";
 
         var results = await connection.QueryAsync<GraphRelationshipDto>(sql, new { Limit = limit });
@@ -204,12 +210,12 @@ public class SqlServerGraphRepository : IGraphRepository
     public async Task<IEnumerable<GraphRelationship>> GetRelationshipsByEntityAsync(string entityName, CancellationToken cancellationToken = default)
     {
         using var connection = CreateConnection();
-        const string sql = @"
+        var sql = $@"
             SELECT
                 CAST(r.$edge_id AS NVARCHAR(1000)) AS EdgeId,
                 r.Id, r.SourceEntityName, r.TargetEntityName, r.Weight,
                 r.Description, r.Keywords, r.SourceId, r.CreatedAt
-            FROM GraphRelationships r, GraphEntities src, GraphEntities tgt
+            FROM {GraphRelationships} r, {GraphEntities} src, {GraphEntities} tgt
             WHERE MATCH(src-(r)->tgt)
             AND (src.EntityName = @EntityName OR tgt.EntityName = @EntityName)";
 
@@ -225,8 +231,8 @@ public class SqlServerGraphRepository : IGraphRepository
         relationship.CreatedAt = relationship.CreatedAt == default ? DateTimeOffset.UtcNow : relationship.CreatedAt;
 
         // Check if relationship exists
-        const string checkSql = @"
-            SELECT COUNT(1) FROM GraphRelationships r, GraphEntities src, GraphEntities tgt
+        var checkSql = $@"
+            SELECT COUNT(1) FROM {GraphRelationships} r, {GraphEntities} src, {GraphEntities} tgt
             WHERE MATCH(src-(r)->tgt)
             AND src.EntityName = @SourceEntityName AND tgt.EntityName = @TargetEntityName";
 
@@ -238,14 +244,14 @@ public class SqlServerGraphRepository : IGraphRepository
 
         if (exists)
         {
-            const string updateSql = @"
+            var updateSql = $@"
                 UPDATE r SET
                     Weight = @Weight,
                     Description = CASE WHEN @Description IS NOT NULL THEN @Description ELSE r.Description END,
                     Keywords = CASE WHEN @Keywords IS NOT NULL THEN @Keywords ELSE r.Keywords END,
                     SourceId = CASE WHEN r.SourceId IS NULL THEN @SourceId
                                ELSE r.SourceId + '<SEP>' + @SourceId END
-                FROM GraphRelationships r, GraphEntities src, GraphEntities tgt
+                FROM {GraphRelationships} r, {GraphEntities} src, {GraphEntities} tgt
                 WHERE MATCH(src-(r)->tgt)
                 AND src.EntityName = @SourceEntityName AND tgt.EntityName = @TargetEntityName";
 
@@ -261,12 +267,12 @@ public class SqlServerGraphRepository : IGraphRepository
         }
         else
         {
-            const string insertSql = @"
-                INSERT INTO GraphRelationships
+            var insertSql = $@"
+                INSERT INTO {GraphRelationships}
                     ($from_id, $to_id, Id, SourceEntityName, TargetEntityName, Weight, Description, Keywords, SourceId, CreatedAt)
                 SELECT
                     src.$node_id, tgt.$node_id, @Id, @SourceEntityName, @TargetEntityName, @Weight, @Description, @Keywords, @SourceId, @CreatedAt
-                FROM GraphEntities src, GraphEntities tgt
+                FROM {GraphEntities} src, {GraphEntities} tgt
                 WHERE src.EntityName = @SourceEntityName AND tgt.EntityName = @TargetEntityName";
 
             await connection.ExecuteAsync(insertSql, new
@@ -299,8 +305,8 @@ public class SqlServerGraphRepository : IGraphRepository
     public async Task DeleteRelationshipAsync(string sourceEntity, string targetEntity, CancellationToken cancellationToken = default)
     {
         using var connection = CreateConnection();
-        const string sql = @"
-            DELETE r FROM GraphRelationships r, GraphEntities src, GraphEntities tgt
+        var sql = $@"
+            DELETE r FROM {GraphRelationships} r, {GraphEntities} src, {GraphEntities} tgt
             WHERE MATCH(src-(r)->tgt)
             AND src.EntityName = @SourceEntity AND tgt.EntityName = @TargetEntity";
 
@@ -320,21 +326,21 @@ public class SqlServerGraphRepository : IGraphRepository
         using var connection = CreateConnection();
 
         var sql = maxHops == 1
-            ? @"
+            ? $@"
                 SELECT DISTINCT
                     CAST(tgt.$node_id AS NVARCHAR(1000)) AS NodeId,
                     tgt.Id, tgt.EntityName, tgt.EntityType, tgt.Description, tgt.SourceId, tgt.CreatedAt
-                FROM GraphEntities src, GraphRelationships r, GraphEntities tgt
+                FROM {GraphEntities} src, {GraphRelationships} r, {GraphEntities} tgt
                 WHERE MATCH(src-(r)->tgt)
                 AND src.EntityName = @EntityName"
-            : @"
+            : $@"
                 SELECT DISTINCT
                     CAST(LastNode.$node_id AS NVARCHAR(1000)) AS NodeId,
                     LastNode.Id, LastNode.EntityName, LastNode.EntityType,
                     LastNode.Description, LastNode.SourceId, LastNode.CreatedAt
-                FROM GraphEntities AS src,
-                     GraphRelationships FOR PATH AS r,
-                     GraphEntities FOR PATH AS tgt
+                FROM {GraphEntities} AS src,
+                     {GraphRelationships} FOR PATH AS r,
+                     {GraphEntities} FOR PATH AS tgt
                 WHERE MATCH(SHORTEST_PATH(src(-(r)->tgt)+))
                 AND src.EntityName = @EntityName
                 AND LEN(tgt.$node_id) - LEN(REPLACE(tgt.$node_id, '/', '')) <= @MaxHops";
@@ -346,7 +352,7 @@ public class SqlServerGraphRepository : IGraphRepository
     public async Task<IEnumerable<(GraphEntity Source, GraphRelationship Edge, GraphEntity Target)>> GetOneHopPathsAsync(string entityName, CancellationToken cancellationToken = default)
     {
         using var connection = CreateConnection();
-        const string sql = @"
+        var sql = $@"
             SELECT
                 CAST(src.$node_id AS NVARCHAR(1000)) AS SrcNodeId,
                 src.Id AS SrcId, src.EntityName AS SrcEntityName, src.EntityType AS SrcEntityType,
@@ -357,7 +363,7 @@ public class SqlServerGraphRepository : IGraphRepository
                 CAST(tgt.$node_id AS NVARCHAR(1000)) AS TgtNodeId,
                 tgt.Id AS TgtId, tgt.EntityName AS TgtEntityName, tgt.EntityType AS TgtEntityType,
                 tgt.Description AS TgtDescription, tgt.SourceId AS TgtSourceId, tgt.CreatedAt AS TgtCreatedAt
-            FROM GraphEntities src, GraphRelationships r, GraphEntities tgt
+            FROM {GraphEntities} src, {GraphRelationships} r, {GraphEntities} tgt
             WHERE MATCH(src-(r)->tgt)
             AND (src.EntityName = @EntityName OR tgt.EntityName = @EntityName)";
 
@@ -369,15 +375,15 @@ public class SqlServerGraphRepository : IGraphRepository
     {
         using var connection = CreateConnection();
 
-        const string sql = @"
+        var sql = $@"
             SELECT
                 STRING_AGG(CAST(tgt.EntityName AS NVARCHAR(MAX)), '->') WITHIN GROUP (GRAPH PATH) AS PathNodes,
                 STRING_AGG(CAST(r.Description AS NVARCHAR(MAX)), '|') WITHIN GROUP (GRAPH PATH) AS PathEdgeDescriptions,
                 LAST_VALUE(tgt.EntityName) WITHIN GROUP (GRAPH PATH) AS LastNode
-            FROM GraphEntities AS src,
-                 GraphRelationships FOR PATH AS r,
-                 GraphEntities FOR PATH AS tgt
-            WHERE MATCH(SHORTEST_PATH(src(-(r)->tgt){1,3}))
+            FROM {GraphEntities} AS src,
+                 {GraphRelationships} FOR PATH AS r,
+                 {GraphEntities} FOR PATH AS tgt
+            WHERE MATCH(SHORTEST_PATH(src(-(r)->tgt){{1,3}}))
             AND src.EntityName = @SourceEntity";
 
         var pathResults = await connection.QueryAsync<PathQueryResult>(sql, new { SourceEntity = sourceEntity.ToUpperInvariant() });
@@ -409,13 +415,21 @@ public class SqlServerGraphRepository : IGraphRepository
     {
         using var connection = CreateConnection();
 
+        // Create schema if it doesn't exist
+        var createSchemaSql = $@"
+            IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = '{_schemaName}')
+            BEGIN
+                EXEC('CREATE SCHEMA [{_schemaName}]')
+            END";
+        await connection.ExecuteAsync(createSchemaSql);
+
         // Create Graph NODE and EDGE tables without embeddings
         // Embeddings are stored in separate EntityVectors and RelationshipVectors tables
         // (matching Python PathRAG architecture with entities_vdb and relationships_vdb)
-        const string createTablesSql = @"
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'GraphEntities')
+        var createTablesSql = $@"
+            IF NOT EXISTS (SELECT * FROM sys.tables t JOIN sys.schemas s ON t.schema_id = s.schema_id WHERE t.name = 'GraphEntities' AND s.name = '{_schemaName}')
             BEGIN
-                CREATE TABLE GraphEntities (
+                CREATE TABLE [{_schemaName}].[GraphEntities] (
                     Id UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID(),
                     EntityName NVARCHAR(500) NOT NULL,
                     EntityType NVARCHAR(100) NOT NULL,
@@ -427,9 +441,9 @@ public class SqlServerGraphRepository : IGraphRepository
                 ) AS NODE;
             END
 
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'GraphRelationships')
+            IF NOT EXISTS (SELECT * FROM sys.tables t JOIN sys.schemas s ON t.schema_id = s.schema_id WHERE t.name = 'GraphRelationships' AND s.name = '{_schemaName}')
             BEGIN
-                CREATE TABLE GraphRelationships (
+                CREATE TABLE [{_schemaName}].[GraphRelationships] (
                     Id UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID(),
                     SourceEntityName NVARCHAR(500) NOT NULL,
                     TargetEntityName NVARCHAR(500) NOT NULL,
@@ -443,13 +457,13 @@ public class SqlServerGraphRepository : IGraphRepository
             END
 
             IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_GraphEntities_EntityName')
-                CREATE INDEX IX_GraphEntities_EntityName ON GraphEntities(EntityName);
+                CREATE INDEX IX_GraphEntities_EntityName ON [{_schemaName}].[GraphEntities](EntityName);
 
             IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_GraphRelationships_Source')
-                CREATE INDEX IX_GraphRelationships_Source ON GraphRelationships(SourceEntityName);
+                CREATE INDEX IX_GraphRelationships_Source ON [{_schemaName}].[GraphRelationships](SourceEntityName);
 
             IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_GraphRelationships_Target')
-                CREATE INDEX IX_GraphRelationships_Target ON GraphRelationships(TargetEntityName);
+                CREATE INDEX IX_GraphRelationships_Target ON [{_schemaName}].[GraphRelationships](TargetEntityName);
         ";
 
         await connection.ExecuteAsync(createTablesSql);
@@ -458,7 +472,8 @@ public class SqlServerGraphRepository : IGraphRepository
     public async Task<bool> IsDatabaseInitializedAsync(CancellationToken cancellationToken = default)
     {
         using var connection = CreateConnection();
-        const string sql = @"SELECT COUNT(*) FROM sys.tables WHERE name IN ('GraphEntities', 'GraphRelationships')";
+        var sql = $@"SELECT COUNT(*) FROM sys.tables t JOIN sys.schemas s ON t.schema_id = s.schema_id
+                     WHERE t.name IN ('GraphEntities', 'GraphRelationships') AND s.name = '{_schemaName}'";
         var count = await connection.ExecuteScalarAsync<int>(sql);
         return count == 2;
     }

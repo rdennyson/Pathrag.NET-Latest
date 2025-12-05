@@ -131,3 +131,6 @@ secrets.json
 *.pfx
 *.p12
 
+PathRAG.NET/src/PathRAG.NET.API/appsettings.json
+/PathRAG.NET/src/PathRAG.NET.API/appsettings.json
+/PathRAG.NET/src/PathRAG.NET.API/appsettings.json

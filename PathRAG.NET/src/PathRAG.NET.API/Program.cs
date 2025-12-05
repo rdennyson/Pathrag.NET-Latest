@@ -22,17 +22,19 @@ builder.Services.AddCors(options =>
     });
 });
 
-// Get connection string
+// Get connection string and schema name
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
+var schemaName = builder.Configuration.GetValue<string>("Database:SchemaName") ?? "PathRAG";
 
 // Register PathRAG services
-builder.Services.AddPathRAGData(connectionString);
+builder.Services.AddPathRAGData(connectionString, schemaName);
 builder.Services.AddGraphServices(settings =>
 {
     settings.ConnectionString = connectionString;
     settings.Provider = "SqlServer";
     settings.EmbeddingDimensions = 1536;
+    settings.SchemaName = schemaName;
 });
 builder.Services.AddSqlServerGraphServices();
 builder.Services.AddPathRAGCore(builder.Configuration);
