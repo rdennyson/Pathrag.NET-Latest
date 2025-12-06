@@ -10,6 +10,7 @@ public interface IPathRAGQueryService
     Task<QueryContextDto> BuildQueryContextAsync(
         string query,
         QueryParamDto? queryParams = null,
+        Guid? logId = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -18,6 +19,7 @@ public interface IPathRAGQueryService
     Task<KnowledgeGraphDto> GetQueryGraphAsync(
         string query,
         int topK = 40,
+        Guid? logId = null,
         CancellationToken cancellationToken = default);
 }
 

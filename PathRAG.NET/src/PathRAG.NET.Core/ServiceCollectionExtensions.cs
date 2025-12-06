@@ -57,6 +57,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IEntityMergingService, EntityMergingService>();
         services.AddScoped<IKeywordsExtractionService, KeywordsExtractionService>();
         services.AddScoped<IPathRAGQueryService, PathRAGQueryService>();
+        services.AddScoped<IPathRAGLoggerService, PathRAGLoggerService>();
 
         // Register MediatR
         services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(ServiceCollectionExtensions).Assembly));

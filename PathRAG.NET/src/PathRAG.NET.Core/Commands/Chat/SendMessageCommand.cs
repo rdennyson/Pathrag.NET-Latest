@@ -21,79 +21,110 @@ public class SendMessageCommandHandler : IRequestHandler<SendMessageCommand, Cha
     private readonly IPathRAGQueryService _pathRAGService;
     private readonly IChatCompletionService _chatService;
     private readonly PathRAGSettings _settings;
+    private readonly IPathRAGLoggerService _logger;
 
     public SendMessageCommandHandler(
         IChatRepository chatRepository,
         IPathRAGQueryService pathRAGService,
         IChatCompletionService chatService,
-        PathRAGSettings settings)
+        PathRAGSettings settings,
+        IPathRAGLoggerService logger)
     {
         _chatRepository = chatRepository;
         _pathRAGService = pathRAGService;
         _chatService = chatService;
         _settings = settings;
+        _logger = logger;
     }
 
     public async Task<ChatMessageDto> Handle(SendMessageCommand request, CancellationToken cancellationToken)
     {
-        // Step 1: Save user message
-        var userMessage = new ChatMessage
+        // Start operation logging
+        var logId = await _logger.StartOperationAsync(
+            "SendMessage",
+            threadId: request.ThreadId,
+            metadata: $"{{\"messageLength\":{request.Message.Length}}}",
+            cancellationToken: cancellationToken);
+
+        Guid stageLogId;
+
+        try
         {
-            Id = Guid.NewGuid(),
-            ThreadId = request.ThreadId,
-            Role = "user",
-            Content = request.Message
-        };
-        await _chatRepository.AddMessageAsync(userMessage, cancellationToken);
+            // Stage 1: Save user message
+            stageLogId = await _logger.StartStageAsync(logId, "MSG_START", message: "Saving user message", cancellationToken: cancellationToken);
+            var userMessage = new ChatMessage
+            {
+                Id = Guid.NewGuid(),
+                ThreadId = request.ThreadId,
+                Role = "user",
+                Content = request.Message
+            };
+            await _chatRepository.AddMessageAsync(userMessage, cancellationToken);
+            await _logger.CompleteStageAsync(stageLogId, details: $"Message ID: {userMessage.Id}", cancellationToken: cancellationToken);
 
-        // Step 2: Build PathRAG context
-        var context = await _pathRAGService.BuildQueryContextAsync(
-            request.Message, 
-            request.QueryParams, 
-            cancellationToken);
+            // Stage 2-6: Build PathRAG context (logging is inside PathRAGQueryService)
+            var context = await _pathRAGService.BuildQueryContextAsync(
+                request.Message,
+                request.QueryParams,
+                logId,
+                cancellationToken);
 
-        // Step 3: Build chat history with context
-        var chatHistory = new ChatHistory();
-        chatHistory.AddSystemMessage(BuildSystemPrompt(context));
+            // Stage 7: Build chat history with context
+            stageLogId = await _logger.StartStageAsync(logId, "MSG_CHAT_HISTORY", message: "Building chat history", cancellationToken: cancellationToken);
+            var chatHistory = new ChatHistory();
+            chatHistory.AddSystemMessage(BuildSystemPrompt(context));
 
-        // Add previous messages from thread
-        var previousMessages = await _chatRepository.GetMessagesByThreadIdAsync(
-            request.ThreadId, _settings.MessageLimit, cancellationToken);
-        
-        foreach (var msg in previousMessages)
-        {
-            if (msg.Role == "user")
-                chatHistory.AddUserMessage(msg.Content);
-            else if (msg.Role == "assistant")
-                chatHistory.AddAssistantMessage(msg.Content);
+            var previousMessages = await _chatRepository.GetMessagesByThreadIdAsync(
+                request.ThreadId, _settings.MessageLimit, cancellationToken);
+
+            foreach (var msg in previousMessages)
+            {
+                if (msg.Role == "user")
+                    chatHistory.AddUserMessage(msg.Content);
+                else if (msg.Role == "assistant")
+                    chatHistory.AddAssistantMessage(msg.Content);
+            }
+            await _logger.CompleteStageAsync(stageLogId, itemsProcessed: previousMessages.Count(), details: $"Loaded {previousMessages.Count()} previous messages", cancellationToken: cancellationToken);
+
+            // Stage 8: Get AI response
+            stageLogId = await _logger.StartStageAsync(logId, "MSG_LLM_RESPONSE", message: "Generating LLM response", cancellationToken: cancellationToken);
+            var response = await _chatService.GetChatMessageContentAsync(chatHistory, cancellationToken: cancellationToken);
+            var responseContent = response.Content ?? "I apologize, but I couldn't generate a response.";
+            await _logger.CompleteStageAsync(stageLogId, details: $"Response length: {responseContent.Length} chars", cancellationToken: cancellationToken);
+
+            // Stage 9: Save assistant message
+            stageLogId = await _logger.StartStageAsync(logId, "MSG_COMPLETE", message: "Saving assistant response", cancellationToken: cancellationToken);
+            var assistantMessage = new ChatMessage
+            {
+                Id = Guid.NewGuid(),
+                ThreadId = request.ThreadId,
+                Role = "assistant",
+                Content = responseContent,
+                InputTokens = 0,
+                OutputTokens = 0
+            };
+            await _chatRepository.AddMessageAsync(assistantMessage, cancellationToken);
+            await _logger.CompleteStageAsync(stageLogId, details: $"Assistant message ID: {assistantMessage.Id}", cancellationToken: cancellationToken);
+
+            // Complete operation
+            await _logger.CompleteOperationAsync(logId, cancellationToken);
+
+            return new ChatMessageDto
+            {
+                Id = assistantMessage.Id,
+                ThreadId = assistantMessage.ThreadId,
+                Role = assistantMessage.Role,
+                Content = assistantMessage.Content,
+                CreatedAt = assistantMessage.CreatedAt,
+                InputTokens = assistantMessage.InputTokens,
+                OutputTokens = assistantMessage.OutputTokens
+            };
         }
-
-        // Step 4: Get AI response
-        var response = await _chatService.GetChatMessageContentAsync(chatHistory, cancellationToken: cancellationToken);
-        var responseContent = response.Content ?? "I apologize, but I couldn't generate a response.";
-
-        // Step 5: Save assistant message
-        var assistantMessage = new ChatMessage
+        catch (Exception ex)
         {
-            Id = Guid.NewGuid(),
-            ThreadId = request.ThreadId,
-            Role = "assistant",
-            Content = responseContent,
-            InputTokens = 0, // Could be extracted from response metadata
-            OutputTokens = 0
-        };
-        await _chatRepository.AddMessageAsync(assistantMessage, cancellationToken);
-
-        return new ChatMessageDto
-        {
-            Id = assistantMessage.Id,
-            ThreadId = assistantMessage.ThreadId,
-            Role = assistantMessage.Role,
-            Content = assistantMessage.Content,
-            CreatedAt = assistantMessage.CreatedAt,
-            InputTokens = assistantMessage.InputTokens,
-            OutputTokens = assistantMessage.OutputTokens
-        };
+            await _logger.FailOperationAsync(logId, ex.Message, cancellationToken);
+            throw;
+        }
     }
 
     private static string BuildSystemPrompt(QueryContextDto context)

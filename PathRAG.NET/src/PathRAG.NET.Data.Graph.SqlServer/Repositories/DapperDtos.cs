@@ -60,13 +60,14 @@ internal class GraphRelationshipDto
 
 /// <summary>
 /// Internal DTO for mapping Dapper query results to EntityVector
+/// SQL Server VECTOR type returns as string like "[0.123,0.456,...]"
 /// </summary>
 internal class EntityVectorDto
 {
     public Guid Id { get; set; }
     public string EntityName { get; set; } = null!;
     public string Content { get; set; } = null!;
-    public byte[]? Embedding { get; set; }
+    public string? Embedding { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 
     public EntityVector ToEntity() => new()
@@ -74,20 +75,28 @@ internal class EntityVectorDto
         Id = Id,
         EntityName = EntityName,
         Content = Content,
-        Embedding = Embedding != null ? ConvertBytesToFloats(Embedding) : Array.Empty<float>(),
+        Embedding = ParseVectorString(Embedding),
         CreatedAt = CreatedAt
     };
 
-    private static float[] ConvertBytesToFloats(byte[] bytes)
+    private static float[] ParseVectorString(string? vectorString)
     {
-        var floats = new float[bytes.Length / sizeof(float)];
-        Buffer.BlockCopy(bytes, 0, floats, 0, bytes.Length);
-        return floats;
+        if (string.IsNullOrEmpty(vectorString)) return [];
+
+        // SQL Server VECTOR returns as "[0.123,0.456,...]" string
+        var trimmed = vectorString.Trim('[', ']');
+        if (string.IsNullOrEmpty(trimmed)) return [];
+
+        return trimmed.Split(',')
+            .Select(s => float.TryParse(s.Trim(), System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out var f) ? f : 0f)
+            .ToArray();
     }
 }
 
 /// <summary>
 /// Internal DTO for mapping Dapper query results to RelationshipVector
+/// SQL Server VECTOR type returns as string like "[0.123,0.456,...]"
 /// </summary>
 internal class RelationshipVectorDto
 {
@@ -95,7 +104,7 @@ internal class RelationshipVectorDto
     public string SourceEntityName { get; set; } = null!;
     public string TargetEntityName { get; set; } = null!;
     public string Content { get; set; } = null!;
-    public byte[]? Embedding { get; set; }
+    public string? Embedding { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 
     public RelationshipVector ToEntity() => new()
@@ -104,15 +113,22 @@ internal class RelationshipVectorDto
         SourceEntityName = SourceEntityName,
         TargetEntityName = TargetEntityName,
         Content = Content,
-        Embedding = Embedding != null ? ConvertBytesToFloats(Embedding) : Array.Empty<float>(),
+        Embedding = ParseVectorString(Embedding),
         CreatedAt = CreatedAt
     };
 
-    private static float[] ConvertBytesToFloats(byte[] bytes)
+    private static float[] ParseVectorString(string? vectorString)
     {
-        var floats = new float[bytes.Length / sizeof(float)];
-        Buffer.BlockCopy(bytes, 0, floats, 0, bytes.Length);
-        return floats;
+        if (string.IsNullOrEmpty(vectorString)) return [];
+
+        // SQL Server VECTOR returns as "[0.123,0.456,...]" string
+        var trimmed = vectorString.Trim('[', ']');
+        if (string.IsNullOrEmpty(trimmed)) return [];
+
+        return trimmed.Split(',')
+            .Select(s => float.TryParse(s.Trim(), System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out var f) ? f : 0f)
+            .ToArray();
     }
 }
 

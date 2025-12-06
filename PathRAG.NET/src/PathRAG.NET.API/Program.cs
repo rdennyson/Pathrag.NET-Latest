@@ -60,6 +60,7 @@ app.UseCors();
 app.MapDocumentEndpoints();
 app.MapChatEndpoints();
 app.MapGraphEndpoints();
+app.MapLogEndpoints();
 
 // Initialize database (graph tables and vector tables)
 using (var scope = app.Services.CreateScope())

@@ -57,7 +57,7 @@ public class GetQueryGraphQueryHandler : IRequestHandler<GetQueryGraphQuery, Kno
 
     public async Task<KnowledgeGraphDto> Handle(GetQueryGraphQuery request, CancellationToken cancellationToken)
     {
-        return await _pathRAGService.GetQueryGraphAsync(request.Query, request.TopK, cancellationToken);
+        return await _pathRAGService.GetQueryGraphAsync(request.Query, request.TopK, null, cancellationToken);
     }
 }
 

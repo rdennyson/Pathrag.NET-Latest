@@ -64,16 +64,23 @@ public class ChatRepository : IChatRepository
 
     public async Task<IEnumerable<ChatMessage>> GetMessagesByThreadIdAsync(Guid threadId, int? limit = null, CancellationToken cancellationToken = default)
     {
-        var query = _context.ChatMessages
-            .Where(m => m.ThreadId == threadId)
-            .OrderBy(m => m.CreatedAt);
-
         if (limit.HasValue)
         {
-            return await query.TakeLast(limit.Value).ToListAsync(cancellationToken);
+            // To get last N messages: order descending, take N, then reverse to get chronological order
+            var messages = await _context.ChatMessages
+                .Where(m => m.ThreadId == threadId)
+                .OrderByDescending(m => m.CreatedAt)
+                .Take(limit.Value)
+                .ToListAsync(cancellationToken);
+
+            messages.Reverse(); // Reverse in memory to get chronological order
+            return messages;
         }
 
-        return await query.ToListAsync(cancellationToken);
+        return await _context.ChatMessages
+            .Where(m => m.ThreadId == threadId)
+            .OrderBy(m => m.CreatedAt)
+            .ToListAsync(cancellationToken);
     }
 
     public async Task<ChatMessage> AddMessageAsync(ChatMessage message, CancellationToken cancellationToken = default)

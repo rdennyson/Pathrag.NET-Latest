@@ -167,7 +167,7 @@ Output:
         var relationships = new List<ExtractedRelationshipDto>();
 
         // Split by record delimiter and completion delimiter (matching Python's split_string_by_multi_markers)
-        var records = response.Split([RecordDelimiter, CompletionDelimiter], StringSplitOptions.RemoveEmptyEntries);
+        var records = SplitByMultiMarkers(response, [RecordDelimiter, CompletionDelimiter]);
 
         foreach (var record in records)
         {
@@ -176,36 +176,42 @@ Output:
             if (!match.Success) continue;
 
             var content = match.Groups[1].Value;
-            var attributes = content.Split([TupleDelimiter], StringSplitOptions.None)
-                .Select(a => CleanString(a))
-                .ToList();
+            // Split by tuple delimiter but DON'T clean yet - Python checks raw first attribute
+            var rawAttributes = SplitByMultiMarkers(content, [TupleDelimiter]);
+            if (rawAttributes.Count == 0) continue;
+
+            // Python checks: record_attributes[0] != '"entity"' - matches the raw string WITH quotes
+            var firstAttr = rawAttributes[0].Trim();
 
             // Parse entity (matching Python's _handle_single_entity_extraction)
-            if (attributes.Count >= 4 && attributes[0] == "\"entity\"")
+            // Python: if len(record_attributes) < 4 or record_attributes[0] != '"entity"'
+            if (rawAttributes.Count >= 4 && firstAttr == "\"entity\"")
             {
-                var entityName = CleanString(attributes[1]).ToUpperInvariant();
+                var entityName = CleanString(rawAttributes[1]).ToUpperInvariant();
                 if (string.IsNullOrWhiteSpace(entityName)) continue;
 
-                var entityType = CleanString(attributes[2]).ToUpperInvariant();
-                var description = CleanString(attributes[3]);
+                var entityType = CleanString(rawAttributes[2]).ToUpperInvariant();
+                var description = CleanString(rawAttributes[3]);
 
                 entities.Add(new ExtractedEntityDto(entityName, entityType, description, sourceId));
             }
             // Parse relationship (matching Python's _handle_single_relationship_extraction)
-            else if (attributes.Count >= 5 && attributes[0] == "\"relationship\"")
+            // Python: if len(record_attributes) < 5 or record_attributes[0] != '"relationship"'
+            else if (rawAttributes.Count >= 5 && firstAttr == "\"relationship\"")
             {
-                var source = CleanString(attributes[1]).ToUpperInvariant();
-                var target = CleanString(attributes[2]).ToUpperInvariant();
+                var source = CleanString(rawAttributes[1]).ToUpperInvariant();
+                var target = CleanString(rawAttributes[2]).ToUpperInvariant();
                 if (string.IsNullOrWhiteSpace(source) || string.IsNullOrWhiteSpace(target)) continue;
 
-                var description = CleanString(attributes[3]);
-                var keywords = CleanString(attributes[4]);
+                var description = CleanString(rawAttributes[3]);
+                var keywords = CleanString(rawAttributes[4]);
 
                 // Weight is the last attribute if it's a float (matching Python's is_float_regex check)
                 var weight = 1.0;
-                if (attributes.Count > 5 && double.TryParse(attributes[^1], out var parsedWeight))
+                var lastAttr = rawAttributes[^1].Trim();
+                if (rawAttributes.Count > 5 && IsFloat(lastAttr))
                 {
-                    weight = parsedWeight;
+                    weight = double.Parse(lastAttr);
                 }
 
                 relationships.Add(new ExtractedRelationshipDto(source, target, description, keywords, weight, sourceId));
@@ -213,6 +219,27 @@ Output:
         }
 
         return (entities, relationships);
+    }
+
+    /// <summary>
+    /// Split string by multiple markers (matching Python's split_string_by_multi_markers)
+    /// </summary>
+    private static List<string> SplitByMultiMarkers(string content, string[] markers)
+    {
+        if (markers.Length == 0) return [content];
+
+        // Build regex pattern: marker1|marker2|...
+        var pattern = string.Join("|", markers.Select(Regex.Escape));
+        var results = Regex.Split(content, pattern);
+        return results.Where(r => !string.IsNullOrWhiteSpace(r)).Select(r => r.Trim()).ToList();
+    }
+
+    /// <summary>
+    /// Check if string is a valid float (matching Python's is_float_regex)
+    /// </summary>
+    private static bool IsFloat(string value)
+    {
+        return Regex.IsMatch(value.Trim(), @"^[-+]?[0-9]*\.?[0-9]+$");
     }
 
     /// <summary>

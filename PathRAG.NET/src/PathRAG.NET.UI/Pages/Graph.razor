@@ -1,83 +1,142 @@
 @page "/graph"
+@implements IDisposable
 @inject IGraphService GraphService
 @inject MessageService MessageService
 @inject NavigationManager NavigationManager
+@inject IJSRuntime JS
 
 <PageTitle>Knowledge Graph - PathRAG.NET</PageTitle>
 
-@* Page Header *@
-<Card Bordered="false" Style="margin-bottom: 24px;">
+<style>
+    .graph-header {
+        background: linear-gradient(135deg, #722ed1 0%, #1890ff 100%);
+        border-radius: 16px;
+        padding: 24px 32px;
+        margin-bottom: 24px;
+        color: white;
+    }
+    .graph-header-title {
+        font-size: 28px;
+        font-weight: 700;
+        margin: 0 0 8px 0;
+        color: white;
+    }
+    .graph-header-subtitle {
+        opacity: 0.9;
+        font-size: 14px;
+    }
+    #cy-container {
+        width: 100%;
+        height: 600px;
+        border: 1px solid #f0f0f0;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%);
+    }
+    .graph-toolbar {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 16px;
+        padding: 12px 16px;
+        background: #fafafa;
+        border-radius: 8px;
+    }
+    .selected-node-panel {
+        background: white;
+        border-radius: 12px;
+        padding: 20px;
+        border: 1px solid #f0f0f0;
+        margin-top: 16px;
+    }
+    .entity-type-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 12px;
+        border-radius: 16px;
+        font-size: 12px;
+        font-weight: 500;
+    }
+    .stat-mini {
+        text-align: center;
+        padding: 16px;
+        background: white;
+        border-radius: 12px;
+        border: 1px solid #f0f0f0;
+    }
+    .stat-mini-value {
+        font-size: 28px;
+        font-weight: 700;
+        line-height: 1;
+    }
+    .stat-mini-label {
+        font-size: 12px;
+        color: #8c8c8c;
+        margin-top: 4px;
+    }
+</style>
+
+@* Gradient Header *@
+<div class="graph-header">
     <Row Justify="space-between" Align="middle">
         <Col>
-            <div style="display: flex; align-items: center; gap: 16px;">
-                <Avatar Size="48" Style="background: linear-gradient(135deg, #722ed1 0%, #1890ff 100%);">
-                    <Icon Type="deployment-unit" Style="font-size: 24px;" />
-                </Avatar>
-                <div>
-                    <Title Level="4" Style="margin: 0;">Knowledge Graph Explorer</Title>
-                    <Text Type="secondary">Visualize entities and relationships extracted from your documents</Text>
-                </div>
-            </div>
+            <h1 class="graph-header-title">
+                <Icon Type="deployment-unit" Style="margin-right: 12px;" />
+                Knowledge Graph Explorer
+            </h1>
+            <div class="graph-header-subtitle">Interactive visualization of entities and relationships using Cytoscape.js</div>
         </Col>
         <Col>
-            <Space>
+            <Space Size="@("middle")">
                 <SpaceItem>
-                    <span style="color: rgba(0,0,0,0.45); margin-right: 8px;">Show:</span>
+                    <span style="color: rgba(255,255,255,0.7); margin-right: 8px;">Nodes:</span>
                     <AntDesign.InputNumber @bind-Value="@_limit" Min="10" Max="500"
                                            Style="width: 80px;" TValue="int" Size="@InputSize.Default" />
-                    <span style="color: rgba(0,0,0,0.45); margin-left: 4px;">nodes</span>
                 </SpaceItem>
                 <SpaceItem>
-                    <Button OnClick="@LoadGraph" Loading="@_loading" Icon="@IconType.Outline.Reload">
-                        Refresh
+                    <Button Ghost OnClick="@LoadGraph" Loading="@_loading" Icon="@IconType.Outline.Reload" Style="color: white; border-color: rgba(255,255,255,0.5);">
+                        Load Graph
                     </Button>
                 </SpaceItem>
             </Space>
         </Col>
     </Row>
-</Card>
+</div>
 
 @* Statistics Row *@
 <Row Gutter="(16, 16)" Style="margin-bottom: 24px;">
-    <Col Xs="24" Sm="8">
-        <Card Bordered="false" Size="small">
-            <Statistic Title="Total Entities" Value="@(_stats?.TotalEntities ?? 0)"
-                       ValueStyle="color: #722ed1">
-                <PrefixTemplate>
-                    <Icon Type="team" Style="color: #722ed1;" />
-                </PrefixTemplate>
-            </Statistic>
-        </Card>
+    <Col Xs="12" Sm="6">
+        <div class="stat-mini">
+            <div class="stat-mini-value" style="color: #722ed1;">@(_stats?.TotalEntities ?? 0)</div>
+            <div class="stat-mini-label">Entities</div>
+        </div>
     </Col>
-    <Col Xs="24" Sm="8">
-        <Card Bordered="false" Size="small">
-            <Statistic Title="Relationships" Value="@(_stats?.TotalRelationships ?? 0)"
-                       ValueStyle="color: #1890ff">
-                <PrefixTemplate>
-                    <Icon Type="api" Style="color: #1890ff;" />
-                </PrefixTemplate>
-            </Statistic>
-        </Card>
+    <Col Xs="12" Sm="6">
+        <div class="stat-mini">
+            <div class="stat-mini-value" style="color: #1890ff;">@(_stats?.TotalRelationships ?? 0)</div>
+            <div class="stat-mini-label">Relationships</div>
+        </div>
     </Col>
-    <Col Xs="24" Sm="8">
-        <Card Bordered="false" Size="small">
-            <Statistic Title="Entity Types" Value="@(_stats?.EntityTypeDistribution?.Count ?? 0)"
-                       ValueStyle="color: #52c41a">
-                <PrefixTemplate>
-                    <Icon Type="tags" Style="color: #52c41a;" />
-                </PrefixTemplate>
-            </Statistic>
-        </Card>
+    <Col Xs="12" Sm="6">
+        <div class="stat-mini">
+            <div class="stat-mini-value" style="color: #52c41a;">@(_stats?.EntityTypeDistribution?.Count ?? 0)</div>
+            <div class="stat-mini-label">Entity Types</div>
+        </div>
+    </Col>
+    <Col Xs="12" Sm="6">
+        <div class="stat-mini">
+            <div class="stat-mini-value" style="color: #fa8c16;">@(_graph?.Edges.Count() ?? 0)</div>
+            <div class="stat-mini-label">Visible Edges</div>
+        </div>
     </Col>
 </Row>
 
 <Row Gutter="(16, 16)">
-    @* Main Graph Area *@
+    @* Main Graph Area with Cytoscape *@
     <Col Xs="24" Lg="16">
-        <Card Bordered="false" Style="min-height: 500px;">
+        <Card Bordered="false">
             <TitleTemplate>
                 <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <span><Icon Type="cluster" Style="margin-right: 8px;" />Entity Explorer</span>
+                    <span><Icon Type="cluster" Style="margin-right: 8px;" />Graph Visualization</span>
                     @if (_graph != null && _graph.Nodes.Any())
                     {
                         <Tag Color="blue">@_graph.Nodes.Count() nodes • @_graph.Edges.Count() edges</Tag>
@@ -85,16 +144,32 @@
                 </div>
             </TitleTemplate>
             <Body>
+                @* Graph Controls *@
+                <div class="graph-toolbar">
+                    <Button Size="@ButtonSize.Small" Icon="@IconType.Outline.FullscreenExit" OnClick="@FitGraph">Fit</Button>
+                    <Button Size="@ButtonSize.Small" Icon="@IconType.Outline.Aim" OnClick="@ResetZoom">Reset Zoom</Button>
+                    <span style="display: inline-block; width: 1px; height: 20px; background: #d9d9d9; margin: 0 12px;"></span>
+                    <Select TItem="string" TItemValue="string" @bind-Value="@_selectedLayout" Style="width: 120px;" Size="@InputSize.Small"
+                            OnSelectedItemChanged="@OnLayoutChange">
+                        <SelectOptions>
+                            <SelectOption TItem="string" TItemValue="string" Value="@("cose")" Label="Force-Directed" />
+                            <SelectOption TItem="string" TItemValue="string" Value="@("circle")" Label="Circle" />
+                            <SelectOption TItem="string" TItemValue="string" Value="@("grid")" Label="Grid" />
+                            <SelectOption TItem="string" TItemValue="string" Value="@("breadthfirst")" Label="Hierarchical" />
+                        </SelectOptions>
+                    </Select>
+                </div>
+
                 @if (_loading)
                 {
-                    <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 400px;">
+                    <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 500px;">
                         <Spin Size="large" />
                         <div style="margin-top: 16px; color: rgba(0,0,0,0.45);">Loading knowledge graph...</div>
                     </div>
                 }
                 else if (_graph == null || !_graph.Nodes.Any())
                 {
-                    <div class="empty-state">
+                    <div class="empty-state" style="height: 500px;">
                         <div class="empty-state-icon">
                             <Icon Type="deployment-unit" />
                         </div>
@@ -109,28 +184,35 @@
                 }
                 else
                 {
-                    <Table TItem="GraphNodeDto" DataSource="@_graph.Nodes" Size="@TableSize.Middle"
-                           Bordered="false" ScrollY="400" ScrollX="600">
-                        <Column TData="string" Title="Entity" Width="200">
-                            <div style="display: flex; align-items: center; gap: 8px;">
-                                <Avatar Size="32" Style="@($"background-color: {GetTypeColorHex(context.Type)}; flex-shrink: 0;")">
-                                    @context.Label.Substring(0, 1).ToUpper()
-                                </Avatar>
-                                <span style="font-weight: 500;">@context.Label</span>
-                            </div>
-                        </Column>
-                        <PropertyColumn Property="c => c.Type" Title="Type" Width="120">
-                            <Tag Color="@GetTypeColor(context.Type)" Style="margin: 0;">@context.Type</Tag>
-                        </PropertyColumn>
-                        <PropertyColumn Property="c => c.Description" Title="Description" Ellipsis>
-                            <Tooltip Title="@context.Description">
-                                @(string.IsNullOrEmpty(context.Description) ? "-" : context.Description)
-                            </Tooltip>
-                        </PropertyColumn>
-                    </Table>
+                    <div id="cy-container"></div>
                 }
             </Body>
         </Card>
+
+        @* Selected Node Details *@
+        @if (_selectedNode != null)
+        {
+            <div class="selected-node-panel">
+                <Row Gutter="16" Align="middle">
+                    <AntDesign.Col>
+                        <Avatar Size="48" Style="@($"background-color: {GetTypeColorHex(_selectedNode.Type)};")">
+                            @(_selectedNode.Label?.Substring(0, 1).ToUpper() ?? "?")
+                        </Avatar>
+                    </AntDesign.Col>
+                    <AntDesign.Col Flex="1">
+                        <Title Level="5" Style="margin: 0;">@_selectedNode.Label</Title>
+                        <Tag Color="@GetTypeColor(_selectedNode.Type)">@_selectedNode.Type</Tag>
+                    </AntDesign.Col>
+                    <AntDesign.Col>
+                        <Button Size="@ButtonSize.Small" Icon="@IconType.Outline.Close" OnClick="@(() => _selectedNode = null)" />
+                    </AntDesign.Col>
+                </Row>
+                @if (!string.IsNullOrEmpty(_selectedNode.Description))
+                {
+                    <Paragraph Style="margin-top: 12px; margin-bottom: 0; color: #595959;">@_selectedNode.Description</Paragraph>
+                }
+            </div>
+        }
     </Col>
 
     @* Sidebar *@
@@ -211,8 +293,11 @@
     private bool _loading = true;
     private bool _querying;
     private int _limit = 100;
+    private string _selectedLayout = "cose";
     private QueryModel _queryModel = new();
     private string? _queryResult;
+    private SelectedNodeInfo? _selectedNode;
+    private bool _cytoscapeInitialized = false;
 
     protected override async Task OnInitializedAsync()
     {
@@ -221,12 +306,46 @@
         await Task.WhenAll(graphTask, statsTask);
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_loading && _graph != null && _graph.Nodes.Any() && !_cytoscapeInitialized)
+        {
+            await InitializeCytoscape();
+            _cytoscapeInitialized = true;
+        }
+    }
+
+    private async Task InitializeCytoscape()
+    {
+        try
+        {
+            // Small delay to ensure DOM is fully rendered
+            await Task.Delay(100);
+
+            var nodes = _graph!.Nodes.Select(n => new { id = n.Id, label = n.Label, type = n.Type, description = n.Description }).ToArray();
+            var edges = _graph!.Edges.Select(e => new { source = e.Source, target = e.Target, label = e.Label, weight = e.Weight }).ToArray();
+
+            var result = await JS.InvokeAsync<bool>("cytoscapeInterop.initialize", "cy-container", nodes, edges);
+            if (!result)
+            {
+                Console.WriteLine("Cytoscape initialization returned false - may need retry");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Cytoscape init error: {ex.Message}");
+            // Don't show error to user for minor init issues
+        }
+    }
+
     private async Task LoadGraph()
     {
         _loading = true;
+        _cytoscapeInitialized = false;
         StateHasChanged();
         try
         {
+            await JS.InvokeVoidAsync("cytoscapeInterop.destroy");
             _graph = await GraphService.GetKnowledgeGraphAsync(_limit);
             _queryResult = null;
         }
@@ -259,9 +378,11 @@
         if (string.IsNullOrWhiteSpace(_queryModel.Query)) return;
 
         _querying = true;
+        _cytoscapeInitialized = false;
         StateHasChanged();
         try
         {
+            await JS.InvokeVoidAsync("cytoscapeInterop.destroy");
             _graph = await GraphService.QueryGraphAsync(_queryModel.Query);
             _queryResult = _queryModel.Query;
             await MessageService.Success($"Found {_graph.Nodes.Count()} relevant entities");
@@ -277,7 +398,16 @@
         }
     }
 
-    private static string GetTypeColor(string type) => type.ToLower() switch
+    private async Task FitGraph() => await JS.InvokeVoidAsync("cytoscapeInterop.fitGraph");
+    private async Task ResetZoom() => await JS.InvokeVoidAsync("cytoscapeInterop.resetZoom");
+    private async Task OnLayoutChange(string layout) => await JS.InvokeVoidAsync("cytoscapeInterop.runLayout", layout);
+
+    public async void Dispose()
+    {
+        try { await JS.InvokeVoidAsync("cytoscapeInterop.destroy"); } catch { }
+    }
+
+    private static string GetTypeColor(string? type) => (type ?? "").ToLower() switch
     {
         "person" => "blue",
         "organization" => "green",
@@ -290,7 +420,7 @@
         _ => "default"
     };
 
-    private static string GetTypeColorHex(string type) => type.ToLower() switch
+    private static string GetTypeColorHex(string? type) => (type ?? "").ToLower() switch
     {
         "person" => "#1890ff",
         "organization" => "#52c41a",
@@ -306,6 +436,14 @@
     private class QueryModel
     {
         public string Query { get; set; } = "";
+    }
+
+    private class SelectedNodeInfo
+    {
+        public string? Id { get; set; }
+        public string? Label { get; set; }
+        public string? Type { get; set; }
+        public string? Description { get; set; }
     }
 }
 

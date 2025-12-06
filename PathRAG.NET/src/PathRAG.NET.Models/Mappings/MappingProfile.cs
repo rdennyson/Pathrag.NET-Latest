@@ -38,6 +38,17 @@ public class MappingProfile : Profile
             .ForMember(dest => dest.Source, opt => opt.MapFrom(src => src.SourceEntityName))
             .ForMember(dest => dest.Target, opt => opt.MapFrom(src => src.TargetEntityName))
             .ForMember(dest => dest.Label, opt => opt.MapFrom(src => src.Keywords));
+
+        // Log mappings
+        CreateMap<PathRAGLog, PathRAGLogDto>()
+            .ForMember(dest => dest.StageLogs, opt => opt.MapFrom(src => src.StageLogs));
+
+        CreateMap<PathRAGStage, PathRAGStageDto>();
+
+        CreateMap<PathRAGStageLog, PathRAGStageLogDto>()
+            .ForMember(dest => dest.StageCode, opt => opt.MapFrom(src => src.Stage != null ? src.Stage.StageCode : string.Empty))
+            .ForMember(dest => dest.StageName, opt => opt.MapFrom(src => src.Stage != null ? src.Stage.StageName : string.Empty))
+            .ForMember(dest => dest.StageOrder, opt => opt.MapFrom(src => src.Stage != null ? src.Stage.StageOrder : 0));
     }
 }
 

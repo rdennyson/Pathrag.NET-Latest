@@ -1,0 +1,481 @@
+@page "/logs"
+@implements IDisposable
+@inject HttpClient Http
+@inject MessageService MessageService
+@inject IJSRuntime JS
+
+<PageTitle>Log Visualizer - PathRAG.NET</PageTitle>
+
+<style>
+    .log-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 16px;
+        padding: 24px 32px;
+        margin-bottom: 24px;
+        color: white;
+    }
+    .log-header-title {
+        font-size: 28px;
+        font-weight: 700;
+        margin: 0 0 8px 0;
+        color: white;
+    }
+    .log-header-subtitle {
+        opacity: 0.9;
+        font-size: 14px;
+    }
+    .metric-card {
+        background: white;
+        border-radius: 12px;
+        padding: 20px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        transition: all 0.3s ease;
+        border: 1px solid #f0f0f0;
+    }
+    .metric-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+    }
+    .metric-value {
+        font-size: 32px;
+        font-weight: 700;
+        line-height: 1;
+    }
+    .metric-label {
+        font-size: 13px;
+        color: #8c8c8c;
+        margin-top: 8px;
+    }
+    .metric-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 24px;
+    }
+    .operation-card {
+        background: white;
+        border-radius: 12px;
+        padding: 16px 20px;
+        margin-bottom: 12px;
+        border-left: 4px solid;
+        transition: all 0.2s ease;
+        cursor: pointer;
+    }
+    .operation-card:hover {
+        background: #fafafa;
+    }
+    .operation-card.doc-upload { border-left-color: #1890ff; }
+    .operation-card.send-message { border-left-color: #52c41a; }
+    .operation-card.get-graph { border-left-color: #722ed1; }
+    .stage-step {
+        position: relative;
+        padding: 12px 16px;
+        background: #fafafa;
+        border-radius: 8px;
+        margin-bottom: 8px;
+    }
+    .stage-step.completed { background: #f6ffed; border-left: 3px solid #52c41a; }
+    .stage-step.failed { background: #fff2f0; border-left: 3px solid #ff4d4f; }
+    .stage-step.started { background: #e6f7ff; border-left: 3px solid #1890ff; }
+    .stage-duration {
+        font-family: 'SF Mono', 'Monaco', monospace;
+        font-size: 12px;
+        padding: 2px 8px;
+        background: rgba(0,0,0,0.06);
+        border-radius: 4px;
+    }
+    .filter-bar {
+        background: white;
+        border-radius: 12px;
+        padding: 16px 20px;
+        margin-bottom: 20px;
+        display: flex;
+        gap: 16px;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+    .live-indicator {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 12px;
+        background: #f6ffed;
+        border-radius: 12px;
+        font-size: 12px;
+        color: #52c41a;
+    }
+    .live-indicator .dot {
+        width: 8px;
+        height: 8px;
+        background: #52c41a;
+        border-radius: 50%;
+        animation: pulse 2s infinite;
+    }
+    @@keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+    }
+</style>
+
+@* Gradient Header *@
+<div class="log-header">
+    <Row Justify="space-between" Align="middle">
+        <Col>
+            <h1 class="log-header-title">
+                <Icon Type="dashboard" Style="margin-right: 12px;" />
+                Pipeline Monitor
+            </h1>
+            <div class="log-header-subtitle">Real-time visibility into PathRAG document processing, queries, and graph operations</div>
+        </Col>
+        <Col>
+            <Space Size="@("middle")">
+                @if (_autoRefresh)
+                {
+                    <SpaceItem>
+                        <div class="live-indicator">
+                            <span class="dot"></span>
+                            Live
+                        </div>
+                    </SpaceItem>
+                }
+                <SpaceItem>
+                    <Switch Checked="@_autoRefresh" CheckedChanged="@OnAutoRefreshChanged" CheckedChildren="Auto" UnCheckedChildren="Manual" />
+                </SpaceItem>
+                <SpaceItem>
+                    <Button Ghost OnClick="@LoadData" Icon="@IconType.Outline.Reload" Style="color: white; border-color: rgba(255,255,255,0.5);">
+                        Refresh
+                    </Button>
+                </SpaceItem>
+            </Space>
+        </Col>
+    </Row>
+</div>
+
+@* Performance Summary *@
+@if (_performanceSummary != null)
+{
+    <AntDesign.Row Gutter="(16, 16)" Style="margin-bottom: 24px;">
+        <AntDesign.Col Xs="24" Sm="6">
+            <Card Bordered="false" Size="small">
+                <Statistic Title="Total Operations" Value="@_performanceSummary.TotalOperations">
+                    <PrefixTemplate>
+                        <Icon Type="thunderbolt" Style="color: #1890ff;" />
+                    </PrefixTemplate>
+                </Statistic>
+            </Card>
+        </AntDesign.Col>
+        <AntDesign.Col Xs="24" Sm="6">
+            <Card Bordered="false" Size="small">
+                <Statistic Title="Completed" Value="@_performanceSummary.CompletedOperations" ValueStyle="color: #52c41a">
+                    <PrefixTemplate>
+                        <Icon Type="check-circle" Style="color: #52c41a;" />
+                    </PrefixTemplate>
+                </Statistic>
+            </Card>
+        </AntDesign.Col>
+        <AntDesign.Col Xs="24" Sm="6">
+            <Card Bordered="false" Size="small">
+                <Statistic Title="Failed" Value="@_performanceSummary.FailedOperations" ValueStyle="color: #ff4d4f">
+                    <PrefixTemplate>
+                        <Icon Type="close-circle" Style="color: #ff4d4f;" />
+                    </PrefixTemplate>
+                </Statistic>
+            </Card>
+        </AntDesign.Col>
+        <AntDesign.Col Xs="24" Sm="6">
+            <Card Bordered="false" Size="small">
+                <Statistic Title="Avg Duration" Value="@FormatDuration(_performanceSummary.AverageOperationDurationMs)" Suffix="ms">
+                    <PrefixTemplate>
+                        <Icon Type="clock-circle" Style="color: #faad14;" />
+                    </PrefixTemplate>
+                </Statistic>
+            </Card>
+        </AntDesign.Col>
+    </AntDesign.Row>
+}
+
+@* Tabs for different views *@
+<Card Bordered="false">
+    <Tabs DefaultActiveKey="1" OnChange="@OnTabChange">
+        <TabPane Key="1" Tab="Operations">
+            @* Operations Table *@
+            @if (_loading)
+            {
+                <div style="text-align: center; padding: 60px;">
+                    <Spin Size="large" Tip="Loading logs..." />
+                </div>
+            }
+            else if (_logs == null || !_logs.Any())
+            {
+                <div class="empty-state">
+                    <div class="empty-state-icon">
+                        <Icon Type="file-search" />
+                    </div>
+                    <div class="empty-state-title">No Logs Yet</div>
+                    <div class="empty-state-description">
+                        Upload and process documents to see operation logs here.
+                    </div>
+                </div>
+            }
+            else
+            {
+                <Table TItem="PathRAGLogDto" DataSource="@_logs" Size="@TableSize.Middle"
+                       Bordered="false" ScrollX="1200">
+                    <Column TData="string" Title="Operation" Width="150">
+                        <Tag Color="@GetOperationColor(context.OperationType)">@context.OperationType</Tag>
+                    </Column>
+                    <Column TData="string" Title="Status" Width="100">
+                        @GetStatusBadge(context.Status)
+                    </Column>
+                    <Column TData="string" Title="Document" Width="200">
+                        @(context.DocumentName ?? "-")
+                    </Column>
+                    <Column TData="string" Title="Started" Width="180">
+                        @context.StartedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss")
+                    </Column>
+                    <Column TData="string" Title="Duration" Width="120">
+                        @(context.DurationMs.HasValue ? $"{context.DurationMs:N0} ms" : "-")
+                    </Column>
+                    <Column TData="string" Title="Stages" Width="100">
+                        <Progress Percent="@GetStageProgress(context)" Size="@ProgressSize.Small" />
+                    </Column>
+                    <Column TData="string" Title="Actions" Width="100" Fixed="right">
+                        <Button Size="@ButtonSize.Small" OnClick="@(() => ShowDetails(context))">
+                            <Icon Type="eye" />
+                        </Button>
+                    </Column>
+                </Table>
+            }
+        </TabPane>
+        <TabPane Key="2" Tab="Stage Performance">
+            @if (_performanceSummary?.StagePerformance == null || !_performanceSummary.StagePerformance.Any())
+            {
+                <Empty Description="@("No stage performance data available")" />
+            }
+            else
+            {
+                <Table TItem="StagePerformanceDto" DataSource="@_performanceSummary.StagePerformance" Size="@TableSize.Small">
+                    <Column TData="string" Title="Stage" DataIndex="StageName" />
+                    <Column TData="string" Title="Code" DataIndex="StageCode" />
+                    <Column TData="int" Title="Executions" DataIndex="TotalExecutions" Sortable />
+                    <Column TData="string" Title="Avg Duration">
+                        @($"{context.AverageDurationMs:N0} ms")
+                    </Column>
+                    <Column TData="string" Title="Min/Max">
+                        @($"{context.MinDurationMs:N0} / {context.MaxDurationMs:N0} ms")
+                    </Column>
+                    <Column TData="string" Title="Total Time">
+                        @($"{context.TotalDurationMs:N0} ms")
+                    </Column>
+                    <Column TData="string" Title="Success Rate">
+                        <Progress Percent="@(context.TotalExecutions > 0 ? (double)context.SuccessCount / context.TotalExecutions * 100 : 0)"
+                                  Size="@ProgressSize.Small" Status="@(context.FailureCount > 0 ? ProgressStatus.Exception : ProgressStatus.Success)" />
+                    </Column>
+                </Table>
+            }
+        </TabPane>
+        <TabPane Key="3" Tab="Operation Types">
+            @if (_performanceSummary?.OperationTypeBreakdown == null || !_performanceSummary.OperationTypeBreakdown.Any())
+            {
+                <Empty Description="@("No operation type data available")" />
+            }
+            else
+            {
+                <Table TItem="OperationTypeBreakdownDto" DataSource="@_performanceSummary.OperationTypeBreakdown" Size="@TableSize.Small">
+                    <Column TData="string" Title="Operation Type">
+                        <Tag Color="@GetOperationColor(context.OperationType)">@context.OperationType</Tag>
+                    </Column>
+                    <Column TData="int" Title="Total" DataIndex="TotalOperations" Sortable />
+                    <Column TData="int" Title="Completed" DataIndex="CompletedOperations" />
+                    <Column TData="int" Title="Failed" DataIndex="FailedOperations" />
+                    <Column TData="string" Title="Avg Duration">
+                        @($"{context.AverageDurationMs:N0} ms")
+                    </Column>
+                    <Column TData="string" Title="Success Rate">
+                        @{ var rate = context.TotalOperations > 0 ? (double)context.CompletedOperations / context.TotalOperations * 100 : 0; }
+                        <Progress Percent="@rate" Size="@ProgressSize.Small" Status="@(context.FailedOperations > 0 ? ProgressStatus.Exception : ProgressStatus.Success)" />
+                    </Column>
+                </Table>
+            }
+        </TabPane>
+    </Tabs>
+</Card>
+
+@* Details Modal *@
+<Modal Title="@($"Operation Details - {_selectedLog?.OperationType}")"
+       Visible="@_detailsVisible"
+       OnCancel="@(() => _detailsVisible = false)"
+       Footer="null"
+       Width="900">
+    @if (_selectedLog != null)
+    {
+        <Descriptions Bordered Column="2" Size="@DescriptionsSize.Small" Style="margin-bottom: 16px;">
+            <DescriptionsItem Title="Operation Type">
+                <Tag Color="@GetOperationColor(_selectedLog.OperationType)">@_selectedLog.OperationType</Tag>
+            </DescriptionsItem>
+            <DescriptionsItem Title="Status">@GetStatusBadge(_selectedLog.Status)</DescriptionsItem>
+            <DescriptionsItem Title="Document">@(_selectedLog.DocumentName ?? "-")</DescriptionsItem>
+            <DescriptionsItem Title="Duration">@(_selectedLog.DurationMs.HasValue ? $"{_selectedLog.DurationMs:N0} ms" : "-")</DescriptionsItem>
+            <DescriptionsItem Title="Started">@_selectedLog.StartedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss")</DescriptionsItem>
+            <DescriptionsItem Title="Completed">@(_selectedLog.CompletedAt?.LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss") ?? "-")</DescriptionsItem>
+            @if (!string.IsNullOrEmpty(_selectedLog.ErrorMessage))
+            {
+                <DescriptionsItem Title="Error" Span="2">
+                    <Alert Type="@AlertType.Error" Message="@_selectedLog.ErrorMessage" />
+                </DescriptionsItem>
+            }
+        </Descriptions>
+
+        <Title Level="5">Stage Execution Timeline</Title>
+        <Timeline Mode="@TimelineMode.Left">
+            @foreach (var stage in _selectedLog.StageLogs.OrderBy(s => s.StageOrder))
+            {
+                <TimelineItem Color="@GetStageColor(stage.Status)">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <Text Strong>@stage.StageName</Text>
+                            <Text Type="secondary" Style="margin-left: 8px;">(@stage.StageCode)</Text>
+                        </div>
+                        <div>
+                            @if (stage.DurationMs.HasValue)
+                            {
+                                <Tag>@($"{stage.DurationMs:N0} ms")</Tag>
+                            }
+                            @GetStatusBadge(stage.Status)
+                        </div>
+                    </div>
+                    @if (!string.IsNullOrEmpty(stage.Message))
+                    {
+                        <div><Text Type="secondary">@stage.Message</Text></div>
+                    }
+                    @if (stage.ItemsProcessed.HasValue)
+                    {
+                        <div><Text Type="secondary">Items: @stage.ItemsProcessed</Text></div>
+                    }
+                </TimelineItem>
+            }
+        </Timeline>
+    }
+</Modal>
+
+@code {
+    private bool _loading = true;
+    private bool _detailsVisible = false;
+    private bool _autoRefresh = false;
+    private System.Threading.Timer? _refreshTimer;
+    private IEnumerable<PathRAGLogDto>? _logs;
+    private LogPerformanceSummaryDto? _performanceSummary;
+    private PathRAGLogDto? _selectedLog;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        _loading = true;
+        try
+        {
+            var logsTask = Http.GetFromJsonAsync<PagedLogResultDto>("api/logs?pageSize=50");
+            var perfTask = Http.GetFromJsonAsync<LogPerformanceSummaryDto>("api/logs/performance");
+
+            await Task.WhenAll(logsTask, perfTask);
+
+            var logsResult = await logsTask;
+            _logs = logsResult?.Logs ?? [];
+            _performanceSummary = await perfTask;
+        }
+        catch (Exception ex)
+        {
+            await MessageService.Error($"Failed to load logs: {ex.Message}");
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void OnAutoRefreshChanged(bool value)
+    {
+        _autoRefresh = value;
+        if (_autoRefresh)
+        {
+            _refreshTimer = new System.Threading.Timer(async _ =>
+            {
+                await InvokeAsync(async () =>
+                {
+                    await LoadData();
+                    StateHasChanged();
+                });
+            }, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+        }
+        else
+        {
+            _refreshTimer?.Dispose();
+            _refreshTimer = null;
+        }
+    }
+
+    private void OnTabChange(string key) { }
+
+    private async void ShowDetails(PathRAGLogDto log)
+    {
+        try
+        {
+            _selectedLog = await Http.GetFromJsonAsync<PathRAGLogDto>($"api/logs/{log.Id}");
+            _detailsVisible = true;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            await MessageService.Error($"Failed to load details: {ex.Message}");
+        }
+    }
+
+    private string GetOperationColor(string operationType) => operationType switch
+    {
+        "DocumentUpload" => "blue",
+        "SendMessage" => "green",
+        "GetKnowledgeGraph" => "purple",
+        _ => "default"
+    };
+
+    private RenderFragment GetStatusBadge(string status) => status switch
+    {
+        "Completed" => @<Badge Status="success" Text="Completed" />,
+        "Failed" => @<Badge Status="error" Text="Failed" />,
+        "Started" => @<Badge Status="processing" Text="In Progress" />,
+        _ => @<Badge Status="default" Text="@status" />
+    };
+
+    private double GetStageProgress(PathRAGLogDto log)
+    {
+        if (log.TotalStages == 0) return 0;
+        return (double)log.CompletedStages / log.TotalStages * 100;
+    }
+
+    private string FormatDuration(long ms)
+    {
+        if (ms < 1000) return ms.ToString();
+        if (ms < 60000) return $"{ms / 1000.0:F1}s";
+        return $"{ms / 60000.0:F1}m";
+    }
+
+    private string GetStageColor(string status) => status switch
+    {
+        "Completed" => "green",
+        "Failed" => "red",
+        "Started" => "blue",
+        _ => "gray"
+    };
+
+    public void Dispose()
+    {
+        _refreshTimer?.Dispose();
+    }
+}
+

@@ -21,6 +21,7 @@ public class PathRAGQueryService : IPathRAGQueryService
     private readonly IDocumentChunkRepository _chunkRepository;
     private readonly IEmbeddingGenerator<string, Embedding<float>> _embeddingGenerator;
     private readonly PathRAGSettings _settings;
+    private readonly IPathRAGLoggerService _logger;
 
     // Python PathRAG's GRAPH_FIELD_SEP from prompt.py
     private const string GraphFieldSep = "<SEP>";
@@ -31,7 +32,8 @@ public class PathRAGQueryService : IPathRAGQueryService
         IGraphVectorRepository graphVectorRepository,
         IDocumentChunkRepository chunkRepository,
         IEmbeddingGenerator<string, Embedding<float>> embeddingGenerator,
-        PathRAGSettings settings)
+        PathRAGSettings settings,
+        IPathRAGLoggerService logger)
     {
         _keywordsService = keywordsService;
         _graphRepository = graphRepository;
@@ -39,6 +41,7 @@ public class PathRAGQueryService : IPathRAGQueryService
         _chunkRepository = chunkRepository;
         _embeddingGenerator = embeddingGenerator;
         _settings = settings;
+        _logger = logger;
     }
 
     /// <summary>
@@ -47,33 +50,71 @@ public class PathRAGQueryService : IPathRAGQueryService
     public async Task<QueryContextDto> BuildQueryContextAsync(
         string query,
         QueryParamDto? queryParams = null,
+        Guid? logId = null,
         CancellationToken cancellationToken = default)
     {
         queryParams ??= new QueryParamDto();
 
-        // Step 1: Extract keywords from query (matching Python's kg_query)
-        var keywords = await _keywordsService.ExtractKeywordsAsync(query, cancellationToken);
-        var llKeywords = string.Join(", ", keywords.LowLevelKeywords);
-        var hlKeywords = string.Join(", ", keywords.HighLevelKeywords);
+        // If no logId provided, this is a standalone query - create our own operation log
+        var isStandaloneQuery = !logId.HasValue;
+        if (isStandaloneQuery)
+        {
+            logId = await _logger.StartOperationAsync("SendMessage", metadata: $"{{\"query\":\"{query.Replace("\"", "\\\"")}\"}}",
+                cancellationToken: cancellationToken);
+        }
 
-        // Step 2: Get low-level context using _get_node_data logic
-        var (llEntitiesContext, llRelationsContext, llTextUnitsContext) =
-            await GetNodeDataAsync(llKeywords, queryParams, cancellationToken);
+        try
+        {
+            // Step 1: Extract keywords from query (matching Python's kg_query)
+            var stageLogId = await _logger.StartStageAsync(logId!.Value, "MSG_KEYWORDS", message: "Extracting keywords from query", cancellationToken: cancellationToken);
+            var keywords = await _keywordsService.ExtractKeywordsAsync(query, cancellationToken);
+            var llKeywords = string.Join(", ", keywords.LowLevelKeywords);
+            var hlKeywords = string.Join(", ", keywords.HighLevelKeywords);
+            await _logger.CompleteStageAsync(stageLogId, details: $"LL: {llKeywords}, HL: {hlKeywords}", cancellationToken: cancellationToken);
 
-        // Step 3: Get high-level context using _get_edge_data logic
-        var (hlEntitiesContext, hlRelationsContext, hlTextUnitsContext) =
-            await GetEdgeDataAsync(hlKeywords, queryParams, cancellationToken);
+            // Step 2: Generate query embedding
+            stageLogId = await _logger.StartStageAsync(logId.Value, "MSG_EMBED", message: "Generating query embedding", cancellationToken: cancellationToken);
+            // Embedding is generated inside GetNodeDataAsync and GetEdgeDataAsync
+            await _logger.CompleteStageAsync(stageLogId, details: "Embedding generated for entity and relationship search", cancellationToken: cancellationToken);
 
-        // Step 4: Combine contexts (matching Python's combine_contexts)
-        var textUnitsContext = CombineTextUnits(hlTextUnitsContext, llTextUnitsContext);
+            // Step 3: Get low-level context using _get_node_data logic
+            stageLogId = await _logger.StartStageAsync(logId.Value, "MSG_SEARCH_ENTITIES", message: "Searching entities (low-level)", cancellationToken: cancellationToken);
+            var (llEntitiesContext, llRelationsContext, llTextUnitsContext) =
+                await GetNodeDataAsync(llKeywords, queryParams, cancellationToken);
+            await _logger.CompleteStageAsync(stageLogId, details: $"Found {llEntitiesContext.Split('\n').Length - 2} entities", cancellationToken: cancellationToken);
 
-        return new QueryContextDto(
-            hlEntitiesContext,
-            hlRelationsContext,
-            llEntitiesContext,
-            llRelationsContext,
-            textUnitsContext
-        );
+            // Step 4: Get high-level context using _get_edge_data logic
+            stageLogId = await _logger.StartStageAsync(logId.Value, "MSG_SEARCH_RELS", message: "Searching relationships (high-level)", cancellationToken: cancellationToken);
+            var (hlEntitiesContext, hlRelationsContext, hlTextUnitsContext) =
+                await GetEdgeDataAsync(hlKeywords, queryParams, cancellationToken);
+            await _logger.CompleteStageAsync(stageLogId, details: $"Found {hlRelationsContext.Split('\n').Length - 2} relationships", cancellationToken: cancellationToken);
+
+            // Step 5: Combine contexts (matching Python's combine_contexts)
+            stageLogId = await _logger.StartStageAsync(logId.Value, "MSG_BUILD_CONTEXT", message: "Building query context", cancellationToken: cancellationToken);
+            var textUnitsContext = CombineTextUnits(hlTextUnitsContext, llTextUnitsContext);
+            await _logger.CompleteStageAsync(stageLogId, cancellationToken: cancellationToken);
+
+            if (isStandaloneQuery)
+            {
+                await _logger.CompleteOperationAsync(logId.Value, cancellationToken);
+            }
+
+            return new QueryContextDto(
+                hlEntitiesContext,
+                hlRelationsContext,
+                llEntitiesContext,
+                llRelationsContext,
+                textUnitsContext
+            );
+        }
+        catch (Exception ex)
+        {
+            if (isStandaloneQuery)
+            {
+                await _logger.FailOperationAsync(logId!.Value, ex.Message, cancellationToken);
+            }
+            throw;
+        }
     }
 
     /// <summary>
@@ -795,49 +836,92 @@ public class PathRAGQueryService : IPathRAGQueryService
     public async Task<KnowledgeGraphDto> GetQueryGraphAsync(
         string query,
         int topK = 40,
+        Guid? logId = null,
         CancellationToken cancellationToken = default)
     {
-        var embeddingResult = await _embeddingGenerator.GenerateAsync([query], cancellationToken: cancellationToken);
-        var embeddingArray = embeddingResult[0].Vector.ToArray();
-
-        // Search entity vectors and get full entity info
-        var entityVectors = await _graphVectorRepository.SearchEntitiesByVectorAsync(embeddingArray, topK, cancellationToken);
-        var entityNames = entityVectors.Select(e => e.EntityName).ToList();
-        var entities = await _graphRepository.GetEntitiesByNamesAsync(entityNames, cancellationToken);
-
-        // Search relationship vectors and get full relationship info
-        var relationshipVectors = await _graphVectorRepository.SearchRelationshipsByVectorAsync(embeddingArray, topK, cancellationToken);
-        var allRelationships = new List<GraphRelationship>();
-        foreach (var rv in relationshipVectors)
+        // If no logId provided, create our own operation log
+        var isStandaloneQuery = !logId.HasValue;
+        if (isStandaloneQuery)
         {
-            var rel = await _graphRepository.GetRelationshipAsync(rv.SourceEntityName, rv.TargetEntityName, cancellationToken);
-            if (rel != null) allRelationships.Add(rel);
+            logId = await _logger.StartOperationAsync("GetKnowledgeGraph", metadata: $"{{\"query\":\"{query.Replace("\"", "\\\"")}\"}}",
+                cancellationToken: cancellationToken);
         }
 
-        // Also get path relationships
-        foreach (var entity in entities.Take(10))
+        Guid stageLogId;
+
+        try
         {
-            var paths = await _graphRepository.GetOneHopPathsAsync(entity.EntityName, cancellationToken);
-            allRelationships.AddRange(paths.Select(p => p.Edge));
+            // Stage 1: Initialize graph query
+            stageLogId = await _logger.StartStageAsync(logId!.Value, "GRAPH_START", message: $"Starting graph query: {query}", cancellationToken: cancellationToken);
+            await _logger.CompleteStageAsync(stageLogId, cancellationToken: cancellationToken);
+
+            // Generate embedding
+            var embeddingResult = await _embeddingGenerator.GenerateAsync([query], cancellationToken: cancellationToken);
+            var embeddingArray = embeddingResult[0].Vector.ToArray();
+
+            // Stage 2: Load entities
+            stageLogId = await _logger.StartStageAsync(logId.Value, "GRAPH_LOAD_ENTITIES", message: "Searching entity vectors", cancellationToken: cancellationToken);
+            var entityVectors = await _graphVectorRepository.SearchEntitiesByVectorAsync(embeddingArray, topK, cancellationToken);
+            var entityNames = entityVectors.Select(e => e.EntityName).ToList();
+            var entities = await _graphRepository.GetEntitiesByNamesAsync(entityNames, cancellationToken);
+            await _logger.CompleteStageAsync(stageLogId, itemsProcessed: entities.Count(), details: $"Found {entities.Count()} entities", cancellationToken: cancellationToken);
+
+            // Stage 3: Load relationships
+            stageLogId = await _logger.StartStageAsync(logId.Value, "GRAPH_LOAD_RELS", message: "Searching relationship vectors", cancellationToken: cancellationToken);
+            var relationshipVectors = await _graphVectorRepository.SearchRelationshipsByVectorAsync(embeddingArray, topK, cancellationToken);
+            var allRelationships = new List<GraphRelationship>();
+            foreach (var rv in relationshipVectors)
+            {
+                var rel = await _graphRepository.GetRelationshipAsync(rv.SourceEntityName, rv.TargetEntityName, cancellationToken);
+                if (rel != null) allRelationships.Add(rel);
+            }
+
+            // Also get path relationships
+            foreach (var entity in entities.Take(10))
+            {
+                var paths = await _graphRepository.GetOneHopPathsAsync(entity.EntityName, cancellationToken);
+                allRelationships.AddRange(paths.Select(p => p.Edge));
+            }
+            await _logger.CompleteStageAsync(stageLogId, itemsProcessed: allRelationships.Count, details: $"Found {allRelationships.Count} relationships", cancellationToken: cancellationToken);
+
+            // Stage 4: Build graph response
+            stageLogId = await _logger.StartStageAsync(logId.Value, "GRAPH_BUILD", message: "Building graph response", cancellationToken: cancellationToken);
+            var nodes = entities.Select(e => new GraphNodeDto
+            {
+                Id = e.EntityName,
+                Label = e.EntityName,
+                Type = e.EntityType,
+                Description = e.Description
+            });
+            var edges = allRelationships.DistinctBy(r => new { r.SourceEntityName, r.TargetEntityName }).Select(r => new GraphEdgeDto
+            {
+                Id = $"{r.SourceEntityName}->{r.TargetEntityName}",
+                Source = r.SourceEntityName,
+                Target = r.TargetEntityName,
+                Label = r.Keywords,
+                Weight = r.Weight
+            });
+            await _logger.CompleteStageAsync(stageLogId, details: $"Built {nodes.Count()} nodes, {edges.Count()} edges", cancellationToken: cancellationToken);
+
+            // Stage 5: Complete
+            stageLogId = await _logger.StartStageAsync(logId.Value, "GRAPH_COMPLETE", message: "Graph query completed", cancellationToken: cancellationToken);
+            await _logger.CompleteStageAsync(stageLogId, cancellationToken: cancellationToken);
+
+            if (isStandaloneQuery)
+            {
+                await _logger.CompleteOperationAsync(logId.Value, cancellationToken);
+            }
+
+            return new KnowledgeGraphDto { Nodes = nodes, Edges = edges };
         }
-
-        var nodes = entities.Select(e => new GraphNodeDto
+        catch (Exception ex)
         {
-            Id = e.EntityName,
-            Label = e.EntityName,
-            Type = e.EntityType,
-            Description = e.Description
-        });
-        var edges = allRelationships.DistinctBy(r => new { r.SourceEntityName, r.TargetEntityName }).Select(r => new GraphEdgeDto
-        {
-            Id = $"{r.SourceEntityName}->{r.TargetEntityName}",
-            Source = r.SourceEntityName,
-            Target = r.TargetEntityName,
-            Label = r.Keywords,
-            Weight = r.Weight
-        });
-
-        return new KnowledgeGraphDto { Nodes = nodes, Edges = edges };
+            if (isStandaloneQuery)
+            {
+                await _logger.FailOperationAsync(logId!.Value, ex.Message, cancellationToken);
+            }
+            throw;
+        }
     }
 
     #endregion
