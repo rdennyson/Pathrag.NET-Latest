@@ -6,82 +6,190 @@
 
 <PageTitle>Chat - PathRAG.NET</PageTitle>
 
-<Row Gutter="16" Style="height: calc(100vh - 140px);">
-    <Col Span="6" Style="height: 100%; overflow-y: auto; border-right: 1px solid #f0f0f0;">
-        <div style="padding: 16px;">
-            <Button Type="@ButtonType.Primary" Block OnClick="@CreateNewThread" Icon="@IconType.Outline.Plus">
-                New Chat
-            </Button>
+<div style="height: calc(100vh - 160px); display: flex; gap: 16px;">
+    @* Thread Sidebar *@
+    <div class="thread-list" style="width: 280px; flex-shrink: 0;">
+        <div class="thread-list-header">
+            <h3><Icon Type="message" Style="margin-right: 8px;" />Conversations</h3>
+            <Tooltip Title="@("New Chat")">
+                <Button Type="@ButtonType.Primary" Shape="@ButtonShape.Circle"
+                        Icon="@IconType.Outline.Plus" OnClick="@CreateNewThread" Size="small" />
+            </Tooltip>
         </div>
-        <Menu Mode="@MenuMode.Inline" SelectedKeys="@(new[] { ThreadId?.ToString() ?? "" })">
-            @if (_threads != null)
+        <div style="overflow-y: auto; height: calc(100% - 60px);">
+            @if (_threads == null)
             {
-                @foreach (var thread in _threads)
-                {
-                    <MenuItem Key="@thread.Id.ToString()" OnClick="@(() => SelectThread(thread.Id))">
-                        <Icon Type="message" Theme="outline" />
-                        <span>@(string.IsNullOrEmpty(thread.Title) ? "Untitled Chat" : thread.Title)</span>
-                    </MenuItem>
-                }
+                <div style="padding: 24px; text-align: center;">
+                    <Spin />
+                </div>
             }
-        </Menu>
-    </Col>
-    <Col Span="18" Style="height: 100%; display: flex; flex-direction: column;">
-        @if (ThreadId == null)
-        {
-            <div style="flex: 1; display: flex; align-items: center; justify-content: center;">
-                <Empty Description="@("Select a chat or create a new one")" />
-            </div>
-        }
-        else
-        {
-            <div class="chat-messages" @ref="_messagesContainer">
-                @if (_messages != null)
+            else if (!_threads.Any())
+            {
+                <div style="padding: 32px 16px; text-align: center; color: rgba(0,0,0,0.45);">
+                    <Icon Type="inbox" Style="font-size: 32px; margin-bottom: 12px; display: block;" />
+                    <div>No conversations yet</div>
+                    <Button Type="@ButtonType.Link" OnClick="@CreateNewThread">Start a new chat</Button>
+                </div>
+            }
+            else
+            {
+                @foreach (var thread in _threads.OrderByDescending(t => t.LastMessageAt ?? t.CreatedAt))
                 {
-                    @foreach (var message in _messages)
-                    {
-                        <div class="message @message.Role">
-                            <div class="message-content">
-                                @message.Content
-                            </div>
-                            <div style="font-size: 12px; color: #999; margin-top: 4px;">
-                                @message.CreatedAt.ToString("HH:mm")
-                            </div>
+                    <div class="thread-item @(ThreadId == thread.Id ? "active" : "")"
+                         @onclick="@(() => SelectThread(thread.Id))">
+                        <div class="thread-item-title">
+                            @(string.IsNullOrEmpty(thread.Title) ? "New Conversation" : thread.Title)
                         </div>
-                    }
-                }
-                @if (_isLoading)
-                {
-                    <div class="message assistant">
-                        <div class="message-content">
-                            <Spin size="small" /> Thinking...
+                        <div class="thread-item-preview">
+                            @((thread.LastMessageAt ?? thread.CreatedAt).ToString("MMM dd, HH:mm"))
                         </div>
                     </div>
                 }
-            </div>
-            <div class="chat-input">
-                <Space Direction="DirectionVHType.Horizontal" Style="width: 100%;">
-                    <SpaceItem Style="flex: 1;">
-                        <TextArea @bind-Value="@_inputMessage" 
-                                  Placeholder="Type your message..." 
-                                  AutoSize="@true"
-                                  OnPressEnter="@SendMessage"
-                                  Disabled="@_isLoading" />
-                    </SpaceItem>
-                    <SpaceItem>
-                        <Button Type="@ButtonType.Primary" 
-                                Icon="@IconType.Outline.Send" 
+            }
+        </div>
+    </div>
+
+    @* Chat Area *@
+    <div style="flex: 1; display: flex; flex-direction: column; min-width: 0;">
+        @if (ThreadId == null)
+        {
+            <Card Bordered="false" Style="flex: 1; display: flex; align-items: center; justify-content: center;">
+                <div class="empty-state">
+                    <div class="empty-state-icon">
+                        <Icon Type="robot" />
+                    </div>
+                    <div class="empty-state-title">PathRAG AI Assistant</div>
+                    <div class="empty-state-description">
+                        Ask questions about your documents and explore your knowledge graph.<br/>
+                        Select an existing conversation or start a new one.
+                    </div>
+                    <Button Type="@ButtonType.Primary" Size="large" OnClick="@CreateNewThread">
+                        <Icon Type="plus" /> Start New Conversation
+                    </Button>
+                </div>
+            </Card>
+        }
+        else
+        {
+            <div class="chat-container">
+                @* Chat Header *@
+                <div class="chat-header">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <Space>
+                            <SpaceItem>
+                                <Avatar Style="background: linear-gradient(135deg, #1890ff 0%, #722ed1 100%);">
+                                    <Icon Type="robot" />
+                                </Avatar>
+                            </SpaceItem>
+                            <SpaceItem>
+                                <div>
+                                    <div style="font-weight: 600;">PathRAG Assistant</div>
+                                    <div style="font-size: 12px; color: rgba(0,0,0,0.45);">
+                                        @if (_isLoading)
+                                        {
+                                            <span><Icon Type="sync" Spin /> Thinking...</span>
+                                        }
+                                        else
+                                        {
+                                            <span>Online • Knowledge Graph RAG</span>
+                                        }
+                                    </div>
+                                </div>
+                            </SpaceItem>
+                        </Space>
+                        <Space>
+                            <SpaceItem>
+                                <Tooltip Title="@("Clear Chat")">
+                                    <Button Type="@ButtonType.Text" Icon="@IconType.Outline.Delete" />
+                                </Tooltip>
+                            </SpaceItem>
+                        </Space>
+                    </div>
+                </div>
+
+                @* Messages Area *@
+                <div class="chat-messages" @ref="_messagesContainer">
+                    @if (_messages == null || !_messages.Any())
+                    {
+                        <div style="text-align: center; padding: 40px; color: rgba(0,0,0,0.45);">
+                            <Icon Type="message" Style="font-size: 48px; margin-bottom: 16px; display: block; opacity: 0.3;" />
+                            <div>Start the conversation by typing a message below</div>
+                        </div>
+                    }
+                    else
+                    {
+                        @foreach (var message in _messages)
+                        {
+                            <div class="message @message.Role">
+                                @if (message.Role == "assistant")
+                                {
+                                    <Avatar Size="32" Style="background: linear-gradient(135deg, #1890ff 0%, #722ed1 100%); flex-shrink: 0;">
+                                        <Icon Type="robot" />
+                                    </Avatar>
+                                }
+                                <div style="flex: 1; min-width: 0;">
+                                    <div class="message-content">
+                                        @message.Content
+                                    </div>
+                                    <div class="message-time">
+                                        @message.CreatedAt.ToString("HH:mm")
+                                    </div>
+                                </div>
+                                @if (message.Role == "user")
+                                {
+                                    <Avatar Size="32" Style="background-color: #1890ff; flex-shrink: 0;">
+                                        <Icon Type="user" />
+                                    </Avatar>
+                                }
+                            </div>
+                        }
+                    }
+                    @if (_isLoading)
+                    {
+                        <div class="message assistant">
+                            <Avatar Size="32" Style="background: linear-gradient(135deg, #1890ff 0%, #722ed1 100%); flex-shrink: 0;">
+                                <Icon Type="robot" />
+                            </Avatar>
+                            <div style="flex: 1;">
+                                <div class="message-content" style="display: inline-flex; align-items: center; gap: 8px;">
+                                    <Spin Size="small" />
+                                    <span>Analyzing your question...</span>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                @* Input Area *@
+                <div class="chat-input">
+                    <div style="display: flex; gap: 12px; align-items: flex-end;">
+                        <div style="flex: 1;">
+                            <TextArea @bind-Value="@_inputMessage"
+                                      Placeholder="Ask a question about your documents..."
+                                      AutoSize="@true"
+                                      MinRows="1"
+                                      MaxRows="4"
+                                      OnPressEnter="@HandleEnterKey"
+                                      Disabled="@_isLoading"
+                                      Style="border-radius: 8px;" />
+                        </div>
+                        <Button Type="@ButtonType.Primary"
+                                Icon="@IconType.Outline.Send"
                                 OnClick="@SendMessage"
                                 Loading="@_isLoading"
-                                Disabled="@string.IsNullOrWhiteSpace(_inputMessage)">
+                                Disabled="@string.IsNullOrWhiteSpace(_inputMessage)"
+                                Style="height: 40px; border-radius: 8px;">
                             Send
                         </Button>
-                    </SpaceItem>
-                </Space>
+                    </div>
+                    <div style="margin-top: 8px; font-size: 12px; color: rgba(0,0,0,0.45); text-align: center;">
+                        Press Enter to send • Shift+Enter for new line
+                    </div>
+                </div>
             </div>
         }
-    </Col>
-</Row>
+    </div>
+</div>
 
 @code {
     [Parameter] public Guid? ThreadId { get; set; }
@@ -108,6 +216,7 @@
     private async Task LoadThreads()
     {
         _threads = await ChatService.GetThreadsAsync();
+        StateHasChanged();
     }
 
     private async Task LoadMessages()
@@ -115,14 +224,22 @@
         if (ThreadId.HasValue)
         {
             _messages = await ChatService.GetMessagesAsync(ThreadId.Value);
+            StateHasChanged();
         }
     }
 
     private async Task CreateNewThread()
     {
-        var thread = await ChatService.CreateThreadAsync();
-        await LoadThreads();
-        Navigation.NavigateTo($"/chat/{thread.Id}");
+        try
+        {
+            var thread = await ChatService.CreateThreadAsync();
+            await LoadThreads();
+            Navigation.NavigateTo($"/chat/{thread.Id}");
+        }
+        catch (Exception ex)
+        {
+            await MessageService.Error($"Failed to create chat: {ex.Message}");
+        }
     }
 
     private void SelectThread(Guid threadId)
@@ -130,26 +247,38 @@
         Navigation.NavigateTo($"/chat/{threadId}");
     }
 
+    private async Task HandleEnterKey(KeyboardEventArgs e)
+    {
+        if (!e.ShiftKey)
+        {
+            await SendMessage();
+        }
+    }
+
     private async Task SendMessage()
     {
         if (string.IsNullOrWhiteSpace(_inputMessage) || !ThreadId.HasValue) return;
 
-        var message = _inputMessage;
+        var message = _inputMessage.Trim();
         _inputMessage = "";
         _isLoading = true;
+        StateHasChanged();
 
         try
         {
             await ChatService.SendMessageAsync(ThreadId.Value, message);
             await LoadMessages();
+            await LoadThreads(); // Refresh to update thread title if changed
         }
         catch (Exception ex)
         {
             await MessageService.Error($"Failed to send message: {ex.Message}");
+            _inputMessage = message; // Restore message on error
         }
         finally
         {
             _isLoading = false;
+            StateHasChanged();
         }
     }
 }

@@ -36,42 +36,50 @@ public class EntityExtractionService : IEntityExtractionService
             string sourceId,
             CancellationToken cancellationToken = default)
     {
-        // Build prompt using exact Python PathRAG format
-        var prompt = BuildEntityExtractionPrompt(text);
-
-        var chatHistory = new ChatHistory();
-        chatHistory.AddUserMessage(prompt);
-
-        // Initial extraction
-        var response = await _chatService.GetChatMessageContentAsync(chatHistory, cancellationToken: cancellationToken);
-        var finalResult = response.Content ?? "";
-        var history = new ChatHistory();
-        history.AddUserMessage(prompt);
-        history.AddAssistantMessage(finalResult);
-
-        // Gleaning: Multiple extraction passes (matching Python's entity_extract_max_gleaning)
-        var maxGleaning = _settings.EntityExtractMaxGleaning;
-        for (int i = 0; i < maxGleaning; i++)
+        try
         {
-            // Continue extraction prompt (from Python PathRAG)
-            history.AddUserMessage(ContinueExtractionPrompt);
-            var gleanResult = await _chatService.GetChatMessageContentAsync(history, cancellationToken: cancellationToken);
-            var gleanContent = gleanResult.Content ?? "";
-            history.AddAssistantMessage(gleanContent);
-            finalResult += gleanContent;
+            // Build prompt using exact Python PathRAG format
+            var prompt = BuildEntityExtractionPrompt(text);
 
-            if (i == maxGleaning - 1) break;
+            var chatHistory = new ChatHistory();
+            chatHistory.AddUserMessage(prompt);
 
-            // Check if more entities exist
-            history.AddUserMessage(IfLoopExtractionPrompt);
-            var loopResult = await _chatService.GetChatMessageContentAsync(history, cancellationToken: cancellationToken);
-            var loopContent = loopResult.Content?.Trim().Trim('"').Trim('\'').ToLowerInvariant() ?? "";
-            history.AddAssistantMessage(loopContent);
+            // Initial extraction
+            var response = await _chatService.GetChatMessageContentAsync(chatHistory, cancellationToken: cancellationToken);
+            var finalResult = response.Content ?? "";
+            var history = new ChatHistory();
+            history.AddUserMessage(prompt);
+            history.AddAssistantMessage(finalResult);
 
-            if (loopContent != "yes") break;
+            // Gleaning: Multiple extraction passes (matching Python's entity_extract_max_gleaning)
+            var maxGleaning = _settings.EntityExtractMaxGleaning;
+            for (int i = 0; i < maxGleaning; i++)
+            {
+                // Continue extraction prompt (from Python PathRAG)
+                history.AddUserMessage(ContinueExtractionPrompt);
+                var gleanResult = await _chatService.GetChatMessageContentAsync(history, cancellationToken: cancellationToken);
+                var gleanContent = gleanResult.Content ?? "";
+                history.AddAssistantMessage(gleanContent);
+                finalResult += gleanContent;
+
+                if (i == maxGleaning - 1) break;
+
+                // Check if more entities exist
+                history.AddUserMessage(IfLoopExtractionPrompt);
+                var loopResult = await _chatService.GetChatMessageContentAsync(history, cancellationToken: cancellationToken);
+                var loopContent = loopResult.Content?.Trim().Trim('"').Trim('\'').ToLowerInvariant() ?? "";
+                history.AddAssistantMessage(loopContent);
+
+                if (loopContent != "yes") break;
+            }
+
+            return ParseExtractionResponse(finalResult, sourceId);
         }
-
-        return ParseExtractionResponse(finalResult, sourceId);
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.ToString());
+            throw;
+        }
     }
 
     private static string BuildEntityExtractionPrompt(string text)

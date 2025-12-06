@@ -84,15 +84,16 @@ public class SendMessageCommandHandler : IRequestHandler<SendMessageCommand, Cha
         };
         await _chatRepository.AddMessageAsync(assistantMessage, cancellationToken);
 
-        return new ChatMessageDto(
-            assistantMessage.Id,
-            assistantMessage.ThreadId,
-            assistantMessage.Role,
-            assistantMessage.Content,
-            assistantMessage.CreatedAt,
-            assistantMessage.InputTokens,
-            assistantMessage.OutputTokens
-        );
+        return new ChatMessageDto
+        {
+            Id = assistantMessage.Id,
+            ThreadId = assistantMessage.ThreadId,
+            Role = assistantMessage.Role,
+            Content = assistantMessage.Content,
+            CreatedAt = assistantMessage.CreatedAt,
+            InputTokens = assistantMessage.InputTokens,
+            OutputTokens = assistantMessage.OutputTokens
+        };
     }
 
     private static string BuildSystemPrompt(QueryContextDto context)

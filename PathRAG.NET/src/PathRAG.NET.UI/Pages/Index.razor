@@ -1,90 +1,240 @@
 @page "/"
 @inject IDocumentService DocumentService
 @inject IGraphService GraphService
+@inject NavigationManager NavigationManager
 
 <PageTitle>Dashboard - PathRAG.NET</PageTitle>
 
-<PageHeader Title="Dashboard" SubTitle="Knowledge Graph RAG System Overview" />
+@* Welcome Banner *@
+<div class="welcome-banner">
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+        <div>
+            <h2>Welcome to PathRAG.NET</h2>
+            <p>An intelligent Knowledge Graph RAG system powered by Azure OpenAI and SQL Server Graph Database</p>
+        </div>
+        <div>
+            <Space>
+                <SpaceItem>
+                    <Button Type="@ButtonType.Default" Ghost OnClick="@(() => NavigationManager.NavigateTo("/documents"))">
+                        <Icon Type="upload" /> Upload Documents
+                    </Button>
+                </SpaceItem>
+                <SpaceItem>
+                    <Button Type="@ButtonType.Default" Ghost OnClick="@(() => NavigationManager.NavigateTo("/chat"))">
+                        <Icon Type="message" /> Start Chat
+                    </Button>
+                </SpaceItem>
+            </Space>
+        </div>
+    </div>
+</div>
 
-<Row Gutter="16">
-    <Col Span="6">
-        <Card Class="stats-card">
-            <Statistic Title="Total Documents" Value="@_documentCount" Prefix="@("<Icon Type=\"file-text\" />")"/>
+@* Statistics Cards *@
+<Row Gutter="(16, 16)">
+    <Col Xs="24" Sm="12" Lg="6">
+        <Card Class="stats-card primary" Bordered="false">
+            <Statistic Title="Total Documents" Value="@_documentCount"
+                       ValueStyle="@("color: #fff; font-size: 32px;")" />
+            <div style="margin-top: 8px; font-size: 13px; opacity: 0.85;">
+                <Icon Type="folder-open" /> Uploaded files
+            </div>
         </Card>
     </Col>
-    <Col Span="6">
-        <Card Class="stats-card">
-            <Statistic Title="Total Entities" Value="@_stats?.TotalEntities" Prefix="@("<Icon Type=\"node-index\" />")"/>
+    <Col Xs="24" Sm="12" Lg="6">
+        <Card Class="stats-card success" Bordered="false">
+            <Statistic Title="Total Entities" Value="@(_stats?.TotalEntities ?? 0)"
+                       ValueStyle="@("color: #fff; font-size: 32px;")" />
+            <div style="margin-top: 8px; font-size: 13px; opacity: 0.85;">
+                <Icon Type="team" /> Knowledge nodes
+            </div>
         </Card>
     </Col>
-    <Col Span="6">
-        <Card Class="stats-card">
-            <Statistic Title="Total Relationships" Value="@_stats?.TotalRelationships" Prefix="@("<Icon Type=\"api\" />")"/>
+    <Col Xs="24" Sm="12" Lg="6">
+        <Card Class="stats-card warning" Bordered="false">
+            <Statistic Title="Relationships" Value="@(_stats?.TotalRelationships ?? 0)"
+                       ValueStyle="@("color: #fff; font-size: 32px;")" />
+            <div style="margin-top: 8px; font-size: 13px; opacity: 0.85;">
+                <Icon Type="api" /> Connected edges
+            </div>
         </Card>
     </Col>
-    <Col Span="6">
-        <Card Class="stats-card">
-            <Statistic Title="Entity Types" Value="@(_stats?.EntityTypeDistribution?.Count ?? 0)" Prefix="@("<Icon Type=\"tags\" />")"/>
+    <Col Xs="24" Sm="12" Lg="6">
+        <Card Class="stats-card info" Bordered="false">
+            <Statistic Title="Entity Types" Value="@(_stats?.EntityTypeDistribution?.Count ?? 0)"
+                       ValueStyle="@("color: #fff; font-size: 32px;")" />
+            <div style="margin-top: 8px; font-size: 13px; opacity: 0.85;">
+                <Icon Type="tags" /> Categories
+            </div>
         </Card>
     </Col>
 </Row>
 
-<Divider />
+<div style="margin-top: 24px;">
+    <Row Gutter="(16, 16)">
+        @* Recent Documents *@
+        <Col Xs="24" Lg="12">
+            <Card Bordered="false">
+                <TitleTemplate>
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span><Icon Type="file-text" Style="margin-right: 8px;" />Recent Documents</span>
+                        <a href="/documents" style="font-size: 14px; font-weight: normal;">View All →</a>
+                    </div>
+                </TitleTemplate>
+                <Body>
+                    @if (_loading)
+                    {
+                        <div style="padding: 40px; text-align: center;">
+                            <Spin Size="large" />
+                        </div>
+                    }
+                    else if (_documents == null || !_documents.Any())
+                    {
+                        <div class="empty-state">
+                            <div class="empty-state-icon">
+                                <Icon Type="inbox" />
+                            </div>
+                            <div class="empty-state-title">No Documents Yet</div>
+                            <div class="empty-state-description">Upload your first document to start building your knowledge graph</div>
+                            <Button Type="@ButtonType.Primary" OnClick="@(() => NavigationManager.NavigateTo("/documents"))">
+                                <Icon Type="upload" /> Upload Document
+                            </Button>
+                        </div>
+                    }
+                    else
+                    {
+                        <AntList DataSource="@_documents.Take(5)" TItem="DocumentDto" Size="large">
+                            <ChildContent Context="doc">
+                                <ListItem>
+                                    <ListItemMeta Avatar="@GetFileIcon(doc.Name)"
+                                                  Title="@doc.Name"
+                                                  Description="@($"{FormatFileSize(doc.FileSize)} | {doc.CreationDate:MMM dd, yyyy}")" />
+                                </ListItem>
+                            </ChildContent>
+                        </AntList>
+                    }
+                </Body>
+            </Card>
+        </Col>
 
-<Row Gutter="16">
-    <AntDesign.Col Span="12">
-        <Card Title="Recent Documents">
-            <Extra>
-                <a href="/documents">View All</a>
-            </Extra>
-            <Body>
-                @if (_documents == null)
-                {
-                    <Spin />
-                }
-                else if (!_documents.Any())
-                {
-                    <Empty Description="@("No documents uploaded yet")" />
-                }
-                else
-                {
-                    <AntList DataSource="@_documents.Take(5)" TItem="DocumentDto">
-                        <ListItem>
-                            <ListItemMeta Title="@context.Name" Description="@($"Status: {context.Status} | Size: {FormatFileSize(context.FileSize)}")" />
-                        </ListItem>
-                    </AntList>
-                }
-            </Body>
-        </Card>
-    </AntDesign.Col>
-    <AntDesign.Col Span="12">
-        <Card Title="Entity Type Distribution">
-            @if (_stats?.EntityTypeDistribution == null || !_stats.EntityTypeDistribution.Any())
-            {
-                <Empty Description="@("No entities in knowledge graph")" />
-            }
-            else
-            {
-                <AntList DataSource="@_stats.EntityTypeDistribution" TItem="KeyValuePair<string, int>">
-                    <ListItem>
-                        <ListItemMeta Title="@context.Key" Description="@($"{context.Value} entities")" />
-                    </ListItem>
-                </AntList>
-            }
-        </Card>
-    </AntDesign.Col>
-</Row>
+        @* Entity Type Distribution *@
+        <Col Xs="24" Lg="12">
+            <Card Bordered="false">
+                <TitleTemplate>
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span><Icon Type="pie-chart" Style="margin-right: 8px;" />Entity Distribution</span>
+                        <a href="/graph" style="font-size: 14px; font-weight: normal;">Explore Graph →</a>
+                    </div>
+                </TitleTemplate>
+                <Body>
+                    @if (_loading)
+                    {
+                        <div style="padding: 40px; text-align: center;">
+                            <Spin Size="large" />
+                        </div>
+                    }
+                    else if (_stats?.EntityTypeDistribution == null || !_stats.EntityTypeDistribution.Any())
+                    {
+                        <div class="empty-state">
+                            <div class="empty-state-icon">
+                                <Icon Type="deployment-unit" />
+                            </div>
+                            <div class="empty-state-title">No Entities Yet</div>
+                            <div class="empty-state-description">Upload and process documents to extract entities and relationships</div>
+                            <Button Type="@ButtonType.Primary" OnClick="@(() => NavigationManager.NavigateTo("/documents"))">
+                                <Icon Type="upload" /> Get Started
+                            </Button>
+                        </div>
+                    }
+                    else
+                    {
+                        <div style="padding: 8px 0;">
+                            @foreach (var kvp in _stats.EntityTypeDistribution.OrderByDescending(x => x.Value))
+                            {
+                                var percentage = _stats.TotalEntities > 0
+                                    ? (double)kvp.Value / _stats.TotalEntities * 100
+                                    : 0;
+                                <div style="margin-bottom: 16px;">
+                                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                                        <span style="font-weight: 500;">
+                                            <Tag Color="@GetEntityTypeColor(kvp.Key)">@kvp.Key</Tag>
+                                        </span>
+                                        <span style="color: rgba(0,0,0,0.45);">@kvp.Value entities (@percentage.ToString("F1")%)</span>
+                                    </div>
+                                    <Progress Percent="@percentage" ShowInfo="false"
+                                              StrokeColor="@GetEntityTypeColor(kvp.Key)" Size="@ProgressSize.Small" />
+                                </div>
+                            }
+                        </div>
+                    }
+                </Body>
+            </Card>
+        </Col>
+    </Row>
+</div>
+
+@* Quick Actions *@
+<div style="margin-top: 24px;">
+    <Card Bordered="false">
+        <TitleTemplate>
+            <span><Icon Type="thunderbolt" Style="margin-right: 8px;" />Quick Actions</span>
+        </TitleTemplate>
+        <Body>
+            <Row Gutter="(16, 16)">
+                <Col Xs="24" Sm="8">
+                    <Card Hoverable Bordered Style="text-align: center; cursor: pointer;" OnClick="@(() => NavigationManager.NavigateTo("/documents"))">
+                        <div style="padding: 16px;">
+                            <Icon Type="cloud-upload" Style="font-size: 36px; color: #1890ff; margin-bottom: 12px;" />
+                            <div style="font-weight: 600; margin-bottom: 4px;">Upload Documents</div>
+                            <div style="color: rgba(0,0,0,0.45); font-size: 13px;">Add PDF, TXT, or DOCX files</div>
+                        </div>
+                    </Card>
+                </Col>
+                <Col Xs="24" Sm="8">
+                    <Card Hoverable Bordered Style="text-align: center; cursor: pointer;" OnClick="@(() => NavigationManager.NavigateTo("/chat"))">
+                        <div style="padding: 16px;">
+                            <Icon Type="robot" Style="font-size: 36px; color: #52c41a; margin-bottom: 12px;" />
+                            <div style="font-weight: 600; margin-bottom: 4px;">AI Chat</div>
+                            <div style="color: rgba(0,0,0,0.45); font-size: 13px;">Query your knowledge base</div>
+                        </div>
+                    </Card>
+                </Col>
+                <Col Xs="24" Sm="8">
+                    <Card Hoverable Bordered Style="text-align: center; cursor: pointer;" OnClick="@(() => NavigationManager.NavigateTo("/graph"))">
+                        <div style="padding: 16px;">
+                            <Icon Type="deployment-unit" Style="font-size: 36px; color: #722ed1; margin-bottom: 12px;" />
+                            <div style="font-weight: 600; margin-bottom: 4px;">Explore Graph</div>
+                            <div style="color: rgba(0,0,0,0.45); font-size: 13px;">Visualize knowledge relationships</div>
+                        </div>
+                    </Card>
+                </Col>
+            </Row>
+        </Body>
+    </Card>
+</div>
 
 @code {
     private IEnumerable<DocumentDto>? _documents;
     private GraphStatsDto? _stats;
     private int _documentCount;
+    private bool _loading = true;
 
     protected override async Task OnInitializedAsync()
     {
-        _documents = await DocumentService.GetDocumentsAsync();
-        _documentCount = _documents?.Count() ?? 0;
-        _stats = await GraphService.GetGraphStatsAsync();
+        try
+        {
+            var documentsTask = DocumentService.GetDocumentsAsync();
+            var statsTask = GraphService.GetGraphStatsAsync();
+
+            await Task.WhenAll(documentsTask, statsTask);
+
+            _documents = await documentsTask;
+            _documentCount = _documents?.Count() ?? 0;
+            _stats = await statsTask;
+        }
+        finally
+        {
+            _loading = false;
+        }
     }
 
     private static string FormatFileSize(long bytes)
@@ -99,5 +249,47 @@
         }
         return $"{size:0.##} {sizes[order]}";
     }
+
+    private static string GetStatusColor(string status) => status.ToLower() switch
+    {
+        "completed" => "#52c41a",
+        "processing" => "#1890ff",
+        "failed" => "#ff4d4f",
+        _ => "#d9d9d9"
+    };
+
+    private static string GetStatusTagColor(string status) => status.ToLower() switch
+    {
+        "completed" => "success",
+        "processing" => "processing",
+        "failed" => "error",
+        _ => "default"
+    };
+
+    private static string GetFileIcon(string fileName)
+    {
+        var ext = Path.GetExtension(fileName)?.ToLower();
+        return ext switch
+        {
+            ".pdf" => "file-pdf",
+            ".doc" or ".docx" => "file-word",
+            ".txt" => "file-text",
+            ".md" => "file-markdown",
+            _ => "file"
+        };
+    }
+
+    private static string GetEntityTypeColor(string type) => type.ToLower() switch
+    {
+        "person" => "#1890ff",
+        "organization" => "#52c41a",
+        "geo" or "location" => "#fa8c16",
+        "event" => "#722ed1",
+        "technology" => "#13c2c2",
+        "product" => "#eb2f96",
+        "concept" => "#faad14",
+        "date" or "time" => "#2f54eb",
+        _ => "#8c8c8c"
+    };
 }
 

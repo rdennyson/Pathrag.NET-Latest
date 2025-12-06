@@ -821,16 +821,23 @@ public class PathRAGQueryService : IPathRAGQueryService
             allRelationships.AddRange(paths.Select(p => p.Edge));
         }
 
-        var nodes = entities.Select(e => new GraphNodeDto(e.EntityName, e.EntityName, e.EntityType, e.Description));
-        var edges = allRelationships.DistinctBy(r => new { r.SourceEntityName, r.TargetEntityName }).Select(r => new GraphEdgeDto(
-            $"{r.SourceEntityName}->{r.TargetEntityName}",
-            r.SourceEntityName,
-            r.TargetEntityName,
-            r.Keywords,
-            r.Weight
-        ));
+        var nodes = entities.Select(e => new GraphNodeDto
+        {
+            Id = e.EntityName,
+            Label = e.EntityName,
+            Type = e.EntityType,
+            Description = e.Description
+        });
+        var edges = allRelationships.DistinctBy(r => new { r.SourceEntityName, r.TargetEntityName }).Select(r => new GraphEdgeDto
+        {
+            Id = $"{r.SourceEntityName}->{r.TargetEntityName}",
+            Source = r.SourceEntityName,
+            Target = r.TargetEntityName,
+            Label = r.Keywords,
+            Weight = r.Weight
+        });
 
-        return new KnowledgeGraphDto(nodes, edges);
+        return new KnowledgeGraphDto { Nodes = nodes, Edges = edges };
     }
 
     #endregion

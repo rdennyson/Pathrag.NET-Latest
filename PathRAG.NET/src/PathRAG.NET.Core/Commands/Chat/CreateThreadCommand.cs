@@ -26,7 +26,14 @@ public class CreateThreadCommandHandler : IRequestHandler<CreateThreadCommand, C
 
         await _chatRepository.CreateThreadAsync(thread, cancellationToken);
 
-        return new ChatThreadDto(thread.Id, thread.Title, thread.CreatedAt, thread.LastMessageAt, 0);
+        return new ChatThreadDto
+        {
+            Id = thread.Id,
+            Title = thread.Title,
+            CreatedAt = thread.CreatedAt,
+            LastMessageAt = thread.LastMessageAt,
+            MessageCount = 0
+        };
     }
 }
 

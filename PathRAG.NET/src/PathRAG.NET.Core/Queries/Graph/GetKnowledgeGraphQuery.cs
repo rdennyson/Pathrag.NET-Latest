@@ -24,16 +24,23 @@ public class GetKnowledgeGraphQueryHandler : IRequestHandler<GetKnowledgeGraphQu
         var entities = await _graphRepository.GetAllEntitiesAsync(request.Limit, cancellationToken);
         var relationships = await _graphRepository.GetAllRelationshipsAsync(request.Limit, cancellationToken);
 
-        var nodes = entities.Select(e => new GraphNodeDto(e.EntityName, e.EntityName, e.EntityType, e.Description));
-        var edges = relationships.Select(r => new GraphEdgeDto(
-            $"{r.SourceEntityName}->{r.TargetEntityName}",
-            r.SourceEntityName,
-            r.TargetEntityName,
-            r.Keywords,
-            r.Weight
-        ));
+        var nodes = entities.Select(e => new GraphNodeDto
+        {
+            Id = e.EntityName,
+            Label = e.EntityName,
+            Type = e.EntityType,
+            Description = e.Description
+        });
+        var edges = relationships.Select(r => new GraphEdgeDto
+        {
+            Id = $"{r.SourceEntityName}->{r.TargetEntityName}",
+            Source = r.SourceEntityName,
+            Target = r.TargetEntityName,
+            Label = r.Keywords,
+            Weight = r.Weight
+        });
 
-        return new KnowledgeGraphDto(nodes, edges);
+        return new KnowledgeGraphDto { Nodes = nodes, Edges = edges };
     }
 }
 
@@ -77,11 +84,12 @@ public class GetGraphStatsQueryHandler : IRequestHandler<GetGraphStatsQuery, Gra
             .GroupBy(e => e.EntityType)
             .ToDictionary(g => g.Key, g => g.Count());
 
-        return new GraphStatsDto(
-            entityList.Count,
-            relationshipList.Count,
-            entityTypes
-        );
+        return new GraphStatsDto
+        {
+            TotalEntities = entityList.Count,
+            TotalRelationships = relationshipList.Count,
+            EntityTypeDistribution = entityTypes
+        };
     }
 }
 

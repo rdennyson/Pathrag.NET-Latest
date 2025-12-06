@@ -1,21 +1,46 @@
 @inherits LayoutComponentBase
 
 <AntDesign.ProLayout.BasicLayout
-    Logo="@("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiMxODkwZmYiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNMTIgMmwxMCA2djhsLTEwIDYtMTAtNlY4bDEwLTZ6Ii8+PHBhdGggZD0iTTEyIDIyVjEyIi8+PHBhdGggZD0iTTIyIDhsLTEwIDQtMTAtNCIvPjwvc3ZnPg==")"
+    Logo="@("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMiIgaGVpZ2h0PSIzMiIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIj48ZGVmcz48bGluZWFyR3JhZGllbnQgaWQ9ImdyYWQiIHgxPSIwJSIgeTE9IjAlIiB4Mj0iMTAwJSIgeTI9IjEwMCUiPjxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiMxODkwZmYiLz48c3RvcCBvZmZzZXQ9IjEwMCUiIHN0b3AtY29sb3I9IiM3MjJlZDEiLz48L2xpbmVhckdyYWRpZW50PjwvZGVmcz48cGF0aCBkPSJNMTIgMmwxMCA2djhsLTEwIDYtMTAtNlY4bDEwLTZ6IiBzdHJva2U9InVybCgjZ3JhZCkiIHN0cm9rZS13aWR0aD0iMiIgZmlsbD0ibm9uZSIvPjxwYXRoIGQ9Ik0xMiAyMlYxMiIgc3Ryb2tlPSJ1cmwoI2dyYWQpIiBzdHJva2Utd2lkdGg9IjIiLz48cGF0aCBkPSJNMjIgOGwtMTAgNC0xMC00IiBzdHJva2U9InVybCgjZ3JhZCkiIHN0cm9rZS13aWR0aD0iMiIvPjxjaXJjbGUgY3g9IjEyIiBjeT0iMTIiIHI9IjMiIGZpbGw9InVybCgjZ3JhZCkiLz48L3N2Zz4=")"
     Title="PathRAG.NET"
     MenuData="@_menuData"
-    @bind-Collapsed="@_collapsed">
+    @bind-Collapsed="@_collapsed"
+    FixedHeader="true"
+    FixSiderbar="true">
+    <RightContentRender>
+        <Space Size="@("24")">
+            <SpaceItem>
+                <Tooltip Title="@("GitHub")">
+                    <a href="https://github.com" target="_blank" style="color: inherit;">
+                        <Icon Type="github" Theme="outline" Style="font-size: 18px;" />
+                    </a>
+                </Tooltip>
+            </SpaceItem>
+            <SpaceItem>
+                <Tooltip Title="@("Documentation")">
+                    <Icon Type="question-circle" Theme="outline" Style="font-size: 18px; cursor: pointer;" />
+                </Tooltip>
+            </SpaceItem>
+            <SpaceItem>
+                <Avatar Style="background-color: #1890ff;">
+                    <Icon Type="user" />
+                </Avatar>
+            </SpaceItem>
+        </Space>
+    </RightContentRender>
     <ChildContent>
-        <div style="padding: 24px; min-height: calc(100vh - 112px);">
+        <div style="padding: 24px; min-height: calc(100vh - 112px); background: #f5f7fa;">
             @Body
         </div>
     </ChildContent>
     <FooterRender>
-        <div style="text-align: center; padding: 16px 0;">
-            PathRAG.NET - Knowledge Graph RAG System
+        <div class="app-footer">
+            PathRAG.NET v1.0 | Knowledge Graph RAG System | Powered by Azure OpenAI & SQL Server
         </div>
     </FooterRender>
 </AntDesign.ProLayout.BasicLayout>
+
+<AntContainer />
 
 @code {
     private bool _collapsed;
@@ -34,21 +59,21 @@
             Path = "/documents",
             Name = "Documents",
             Key = "documents",
-            Icon = "file-text"
+            Icon = "folder-open"
         },
         new AntDesign.ProLayout.MenuDataItem
         {
             Path = "/chat",
-            Name = "Chat",
+            Name = "AI Chat",
             Key = "chat",
-            Icon = "message"
+            Icon = "robot"
         },
         new AntDesign.ProLayout.MenuDataItem
         {
             Path = "/graph",
             Name = "Knowledge Graph",
             Key = "graph",
-            Icon = "apartment"
+            Icon = "deployment-unit"
         }
     };
 }

@@ -1,59 +1,66 @@
 namespace PathRAG.NET.Models.DTOs;
 
-public record GraphEntityDto(
-    Guid Id,
-    string EntityName,
-    string EntityType,
-    string? Description,
-    int Rank
-);
+public class GraphEntityDto
+{
+    public Guid Id { get; set; }
+    public string EntityName { get; set; } = string.Empty;
+    public string EntityType { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public int Rank { get; set; }
+}
 
-public record GraphRelationshipDto(
-    Guid Id,
-    string SourceEntityName,
-    string TargetEntityName,
-    double Weight,
-    string? Description,
-    string? Keywords,
-    int Rank
-);
+public class GraphRelationshipDto
+{
+    public Guid Id { get; set; }
+    public string SourceEntityName { get; set; } = string.Empty;
+    public string TargetEntityName { get; set; } = string.Empty;
+    public double Weight { get; set; }
+    public string? Description { get; set; }
+    public string? Keywords { get; set; }
+    public int Rank { get; set; }
+}
 
-public record GraphNodeDto(
-    string Id,
-    string Label,
-    string Type,
-    string? Description
-);
+public class GraphNodeDto
+{
+    public string Id { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public string Type { get; set; } = string.Empty;
+    public string? Description { get; set; }
+}
 
-public record GraphEdgeDto(
-    string Id,
-    string Source,
-    string Target,
-    string? Label,
-    double Weight
-);
+public class GraphEdgeDto
+{
+    public string Id { get; set; } = string.Empty;
+    public string Source { get; set; } = string.Empty;
+    public string Target { get; set; } = string.Empty;
+    public string? Label { get; set; }
+    public double Weight { get; set; }
+}
 
-public record KnowledgeGraphDto(
-    IEnumerable<GraphNodeDto> Nodes,
-    IEnumerable<GraphEdgeDto> Edges
-);
+public class KnowledgeGraphDto
+{
+    public IEnumerable<GraphNodeDto> Nodes { get; set; } = [];
+    public IEnumerable<GraphEdgeDto> Edges { get; set; } = [];
+}
 
 public record GraphQueryRequest(
     string Query,
     int TopK = 40
 );
 
-public record GraphQueryResponse(
-    string Query,
-    KnowledgeGraphDto Graph,
-    IEnumerable<GraphPathDto> Paths
-);
+public class GraphQueryResponse
+{
+    public string Query { get; set; } = string.Empty;
+    public KnowledgeGraphDto Graph { get; set; } = new();
+    public IEnumerable<GraphPathDto> Paths { get; set; } = [];
+}
 
-public record GraphPathDto(
-    IEnumerable<string> Nodes,
-    string Context,
-    int HopCount
-);
+public class GraphPathDto
+{
+    public IEnumerable<string> Nodes { get; set; } = [];
+    public string Context { get; set; } = string.Empty;
+    public int HopCount { get; set; }
+}
 
 public record ExtractedEntityDto(
     string EntityName,
@@ -71,8 +78,9 @@ public record ExtractedRelationshipDto(
     string SourceId
 );
 
-public record GraphStatsDto(
-    int TotalEntities,
-    int TotalRelationships,
-    Dictionary<string, int> EntityTypeDistribution
-);
+public class GraphStatsDto
+{
+    public int TotalEntities { get; set; }
+    public int TotalRelationships { get; set; }
+    public Dictionary<string, int> EntityTypeDistribution { get; set; } = [];
+}

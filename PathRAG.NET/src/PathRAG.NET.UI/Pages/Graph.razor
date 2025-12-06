@@ -1,89 +1,206 @@
 @page "/graph"
 @inject IGraphService GraphService
 @inject MessageService MessageService
+@inject NavigationManager NavigationManager
 
 <PageTitle>Knowledge Graph - PathRAG.NET</PageTitle>
 
-<PageHeader Title="Knowledge Graph" SubTitle="Visualize and explore your knowledge graph">
-    <PageHeaderExtra>
-        <Space>
-            <SpaceItem>
-                <AntDesign.InputNumber @bind-Value="@_limit" Min="10" Max="500" Style="width: 100px;" TValue="int" />
-            </SpaceItem>
-            <SpaceItem>
-                <Button Type="@ButtonType.Primary" OnClick="@LoadGraph" Loading="@_loading">
-                    Refresh
-                </Button>
-            </SpaceItem>
-        </Space>
-    </PageHeaderExtra>
-</PageHeader>
+@* Page Header *@
+<Card Bordered="false" Style="margin-bottom: 24px;">
+    <Row Justify="space-between" Align="middle">
+        <Col>
+            <div style="display: flex; align-items: center; gap: 16px;">
+                <Avatar Size="48" Style="background: linear-gradient(135deg, #722ed1 0%, #1890ff 100%);">
+                    <Icon Type="deployment-unit" Style="font-size: 24px;" />
+                </Avatar>
+                <div>
+                    <Title Level="4" Style="margin: 0;">Knowledge Graph Explorer</Title>
+                    <Text Type="secondary">Visualize entities and relationships extracted from your documents</Text>
+                </div>
+            </div>
+        </Col>
+        <Col>
+            <Space>
+                <SpaceItem>
+                    <span style="color: rgba(0,0,0,0.45); margin-right: 8px;">Show:</span>
+                    <AntDesign.InputNumber @bind-Value="@_limit" Min="10" Max="500"
+                                           Style="width: 80px;" TValue="int" Size="@InputSize.Default" />
+                    <span style="color: rgba(0,0,0,0.45); margin-left: 4px;">nodes</span>
+                </SpaceItem>
+                <SpaceItem>
+                    <Button OnClick="@LoadGraph" Loading="@_loading" Icon="@IconType.Outline.Reload">
+                        Refresh
+                    </Button>
+                </SpaceItem>
+            </Space>
+        </Col>
+    </Row>
+</Card>
 
-<Row Gutter="16">
-    <Col Span="18">
-        <Card Title="Graph Visualization" Style="height: calc(100vh - 250px);">
-            @if (_loading)
-            {
-                <div style="display: flex; justify-content: center; align-items: center; height: 100%;">
-                    <Spin Size="large" />
-                </div>
-            }
-            else if (_graph == null || !_graph.Nodes.Any())
-            {
-                <Empty Description="@("No entities in knowledge graph. Upload documents to build the graph.")" />
-            }
-            else
-            {
-                <div style="padding: 16px;">
-                    <Alert Type="@AlertType.Info"
-                           Message="@($"Showing {_graph.Nodes.Count()} nodes and {_graph.Edges.Count()} edges")"
-                           ShowIcon="true" />
-                    <Divider />
-                    <Table TItem="GraphNodeDto" DataSource="@_graph.Nodes.Take(20)" Size="@TableSize.Small">
-                        <PropertyColumn Property="c => c.Label" Title="Entity" />
-                        <PropertyColumn Property="c => c.Type" Title="Type">
-                            <Tag Color="@GetTypeColor(context.Type)">@context.Type</Tag>
-                        </PropertyColumn>
-                        <PropertyColumn Property="c => c.Description" Title="Description" Ellipsis />
-                    </Table>
-                </div>
-            }
+@* Statistics Row *@
+<Row Gutter="(16, 16)" Style="margin-bottom: 24px;">
+    <Col Xs="24" Sm="8">
+        <Card Bordered="false" Size="small">
+            <Statistic Title="Total Entities" Value="@(_stats?.TotalEntities ?? 0)"
+                       ValueStyle="color: #722ed1">
+                <PrefixTemplate>
+                    <Icon Type="team" Style="color: #722ed1;" />
+                </PrefixTemplate>
+            </Statistic>
         </Card>
     </Col>
-    <Col Span="6">
-        <Card Title="Query Graph" Style="margin-bottom: 16px;">
-            <Form Model="@_queryModel" OnFinish="@QueryGraph">
-                <FormItem Label="Query">
-                    <TextArea @bind-Value="@_queryModel.Query" Rows="3" Placeholder="Enter your query..." />
-                </FormItem>
-                <FormItem>
-                    <Button Type="@ButtonType.Primary" HtmlType="submit" Block Loading="@_querying">
-                        Search Graph
-                    </Button>
-                </FormItem>
-            </Form>
+    <Col Xs="24" Sm="8">
+        <Card Bordered="false" Size="small">
+            <Statistic Title="Relationships" Value="@(_stats?.TotalRelationships ?? 0)"
+                       ValueStyle="color: #1890ff">
+                <PrefixTemplate>
+                    <Icon Type="api" Style="color: #1890ff;" />
+                </PrefixTemplate>
+            </Statistic>
         </Card>
-        
-        <Card Title="Statistics">
-            @if (_stats != null)
-            {
-                <Descriptions Column="1" Bordered Size="@DescriptionsSize.Small">
-                    <DescriptionsItem Title="Total Entities">@_stats.TotalEntities</DescriptionsItem>
-                    <DescriptionsItem Title="Total Relationships">@_stats.TotalRelationships</DescriptionsItem>
-                </Descriptions>
-                
-                @if (_stats.EntityTypeDistribution.Any())
-                {
-                    <Divider>Entity Types</Divider>
-                    @foreach (var kvp in _stats.EntityTypeDistribution)
+    </Col>
+    <Col Xs="24" Sm="8">
+        <Card Bordered="false" Size="small">
+            <Statistic Title="Entity Types" Value="@(_stats?.EntityTypeDistribution?.Count ?? 0)"
+                       ValueStyle="color: #52c41a">
+                <PrefixTemplate>
+                    <Icon Type="tags" Style="color: #52c41a;" />
+                </PrefixTemplate>
+            </Statistic>
+        </Card>
+    </Col>
+</Row>
+
+<Row Gutter="(16, 16)">
+    @* Main Graph Area *@
+    <Col Xs="24" Lg="16">
+        <Card Bordered="false" Style="min-height: 500px;">
+            <TitleTemplate>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span><Icon Type="cluster" Style="margin-right: 8px;" />Entity Explorer</span>
+                    @if (_graph != null && _graph.Nodes.Any())
                     {
-                        <div style="margin-bottom: 8px;">
-                            <Tag Color="@GetTypeColor(kvp.Key)">@kvp.Key</Tag>
-                            <Text>@kvp.Value</Text>
-                        </div>
+                        <Tag Color="blue">@_graph.Nodes.Count() nodes • @_graph.Edges.Count() edges</Tag>
                     }
+                </div>
+            </TitleTemplate>
+            <Body>
+                @if (_loading)
+                {
+                    <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 400px;">
+                        <Spin Size="large" />
+                        <div style="margin-top: 16px; color: rgba(0,0,0,0.45);">Loading knowledge graph...</div>
+                    </div>
                 }
-            }
+                else if (_graph == null || !_graph.Nodes.Any())
+                {
+                    <div class="empty-state">
+                        <div class="empty-state-icon">
+                            <Icon Type="deployment-unit" />
+                        </div>
+                        <div class="empty-state-title">No Entities Yet</div>
+                        <div class="empty-state-description">
+                            Upload and process documents to extract entities and build your knowledge graph.
+                        </div>
+                        <Button Type="@ButtonType.Primary" OnClick="@(() => NavigationManager.NavigateTo("/documents"))">
+                            <Icon Type="upload" /> Upload Documents
+                        </Button>
+                    </div>
+                }
+                else
+                {
+                    <Table TItem="GraphNodeDto" DataSource="@_graph.Nodes" Size="@TableSize.Middle"
+                           Bordered="false" ScrollY="400" ScrollX="600">
+                        <Column TData="string" Title="Entity" Width="200">
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <Avatar Size="32" Style="@($"background-color: {GetTypeColorHex(context.Type)}; flex-shrink: 0;")">
+                                    @context.Label.Substring(0, 1).ToUpper()
+                                </Avatar>
+                                <span style="font-weight: 500;">@context.Label</span>
+                            </div>
+                        </Column>
+                        <PropertyColumn Property="c => c.Type" Title="Type" Width="120">
+                            <Tag Color="@GetTypeColor(context.Type)" Style="margin: 0;">@context.Type</Tag>
+                        </PropertyColumn>
+                        <PropertyColumn Property="c => c.Description" Title="Description" Ellipsis>
+                            <Tooltip Title="@context.Description">
+                                @(string.IsNullOrEmpty(context.Description) ? "-" : context.Description)
+                            </Tooltip>
+                        </PropertyColumn>
+                    </Table>
+                }
+            </Body>
+        </Card>
+    </Col>
+
+    @* Sidebar *@
+    <Col Xs="24" Lg="8">
+        @* Search Card *@
+        <Card Bordered="false" Style="margin-bottom: 16px;">
+            <TitleTemplate>
+                <span><Icon Type="search" Style="margin-right: 8px;" />Search Graph</span>
+            </TitleTemplate>
+            <Body>
+                <Form Model="@_queryModel" OnFinish="@QueryGraph" Layout="@FormLayout.Vertical">
+                    <FormItem>
+                        <TextArea @bind-Value="@_queryModel.Query" Rows="3"
+                                  Placeholder="Search for entities, concepts, or relationships..."
+                                  Style="border-radius: 8px;" />
+                    </FormItem>
+                    <FormItem Style="margin-bottom: 0;">
+                        <Button Type="@ButtonType.Primary" HtmlType="submit" Block Loading="@_querying"
+                                Icon="@IconType.Outline.Search">
+                            Search Knowledge Graph
+                        </Button>
+                    </FormItem>
+                </Form>
+                @if (_queryResult != null)
+                {
+                    <div style="margin-top: 16px;">
+                        <Alert Type="@AlertType.Success" ShowIcon="true"
+                               Message="@($"Found {_graph?.Nodes.Count() ?? 0} matching entities")" />
+                    </div>
+                }
+            </Body>
+        </Card>
+
+        @* Entity Types Card *@
+        <Card Bordered="false">
+            <TitleTemplate>
+                <span><Icon Type="pie-chart" Style="margin-right: 8px;" />Entity Types</span>
+            </TitleTemplate>
+            <Body>
+                @if (_stats?.EntityTypeDistribution == null || !_stats.EntityTypeDistribution.Any())
+                {
+                    <div style="text-align: center; padding: 24px; color: rgba(0,0,0,0.45);">
+                        <Icon Type="inbox" Style="font-size: 32px; margin-bottom: 8px; display: block;" />
+                        No entity types found
+                    </div>
+                }
+                else
+                {
+                    <div style="padding: 8px 0;">
+                        @foreach (var kvp in _stats.EntityTypeDistribution.OrderByDescending(x => x.Value))
+                        {
+                            var percentage = _stats.TotalEntities > 0
+                                ? (double)kvp.Value / _stats.TotalEntities * 100
+                                : 0;
+                            <div style="margin-bottom: 16px;">
+                                <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                                    <span>
+                                        <Tag Color="@GetTypeColor(kvp.Key)" Style="margin-right: 4px;">@kvp.Key</Tag>
+                                    </span>
+                                    <span style="color: rgba(0,0,0,0.45); font-size: 13px;">
+                                        @kvp.Value (@percentage.ToString("F1")%)
+                                    </span>
+                                </div>
+                                <Progress Percent="@percentage" ShowInfo="false"
+                                          StrokeColor="@GetTypeColorHex(kvp.Key)" Size="@ProgressSize.Small" />
+                            </div>
+                        }
+                    </div>
+                }
+            </Body>
         </Card>
     </Col>
 </Row>
@@ -95,19 +212,23 @@
     private bool _querying;
     private int _limit = 100;
     private QueryModel _queryModel = new();
+    private string? _queryResult;
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadGraph();
-        await LoadStats();
+        var graphTask = LoadGraph();
+        var statsTask = LoadStats();
+        await Task.WhenAll(graphTask, statsTask);
     }
 
     private async Task LoadGraph()
     {
         _loading = true;
+        StateHasChanged();
         try
         {
             _graph = await GraphService.GetKnowledgeGraphAsync(_limit);
+            _queryResult = null;
         }
         catch (Exception ex)
         {
@@ -116,12 +237,21 @@
         finally
         {
             _loading = false;
+            StateHasChanged();
         }
     }
 
     private async Task LoadStats()
     {
-        _stats = await GraphService.GetGraphStatsAsync();
+        try
+        {
+            _stats = await GraphService.GetGraphStatsAsync();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            await MessageService.Error($"Failed to load statistics: {ex.Message}");
+        }
     }
 
     private async Task QueryGraph()
@@ -129,9 +259,11 @@
         if (string.IsNullOrWhiteSpace(_queryModel.Query)) return;
 
         _querying = true;
+        StateHasChanged();
         try
         {
             _graph = await GraphService.QueryGraphAsync(_queryModel.Query);
+            _queryResult = _queryModel.Query;
             await MessageService.Success($"Found {_graph.Nodes.Count()} relevant entities");
         }
         catch (Exception ex)
@@ -141,6 +273,7 @@
         finally
         {
             _querying = false;
+            StateHasChanged();
         }
     }
 
@@ -148,12 +281,26 @@
     {
         "person" => "blue",
         "organization" => "green",
-        "geo" => "orange",
+        "geo" or "location" => "orange",
         "event" => "purple",
         "technology" => "cyan",
         "product" => "magenta",
         "concept" => "gold",
+        "date" or "time" => "geekblue",
         _ => "default"
+    };
+
+    private static string GetTypeColorHex(string type) => type.ToLower() switch
+    {
+        "person" => "#1890ff",
+        "organization" => "#52c41a",
+        "geo" or "location" => "#fa8c16",
+        "event" => "#722ed1",
+        "technology" => "#13c2c2",
+        "product" => "#eb2f96",
+        "concept" => "#faad14",
+        "date" or "time" => "#2f54eb",
+        _ => "#8c8c8c"
     };
 
     private class QueryModel

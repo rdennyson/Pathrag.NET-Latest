@@ -22,13 +22,13 @@ public class GraphService : IGraphService
     public async Task<KnowledgeGraphDto> GetKnowledgeGraphAsync(int limit = 100)
     {
         var response = await _httpClient.GetFromJsonAsync<KnowledgeGraphDto>($"api/graph?limit={limit}");
-        return response ?? new KnowledgeGraphDto(Enumerable.Empty<GraphNodeDto>(), Enumerable.Empty<GraphEdgeDto>());
+        return response ?? new KnowledgeGraphDto();
     }
 
     public async Task<GraphStatsDto> GetGraphStatsAsync()
     {
         var response = await _httpClient.GetFromJsonAsync<GraphStatsDto>("api/graph/stats");
-        return response ?? new GraphStatsDto(0, 0, new Dictionary<string, int>());
+        return response ?? new GraphStatsDto();
     }
 
     public async Task<KnowledgeGraphDto> QueryGraphAsync(string query, int topK = 40)
@@ -36,7 +36,7 @@ public class GraphService : IGraphService
         var response = await _httpClient.PostAsJsonAsync("api/graph/query", new { Query = query, TopK = topK });
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<KnowledgeGraphDto>()
-            ?? new KnowledgeGraphDto(Enumerable.Empty<GraphNodeDto>(), Enumerable.Empty<GraphEdgeDto>());
+            ?? new KnowledgeGraphDto();
     }
 }
 

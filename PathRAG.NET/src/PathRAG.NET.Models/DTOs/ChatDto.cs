@@ -1,22 +1,24 @@
 namespace PathRAG.NET.Models.DTOs;
 
-public record ChatThreadDto(
-    Guid Id,
-    string Title,
-    DateTimeOffset CreatedAt,
-    DateTimeOffset? LastMessageAt,
-    int MessageCount
-);
+public class ChatThreadDto
+{
+    public Guid Id { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? LastMessageAt { get; set; }
+    public int MessageCount { get; set; }
+}
 
-public record ChatMessageDto(
-    Guid Id,
-    Guid ThreadId,
-    string Role,
-    string Content,
-    DateTimeOffset CreatedAt,
-    int? InputTokens,
-    int? OutputTokens
-);
+public class ChatMessageDto
+{
+    public Guid Id { get; set; }
+    public Guid ThreadId { get; set; }
+    public string Role { get; set; } = string.Empty;
+    public string Content { get; set; } = string.Empty;
+    public DateTimeOffset CreatedAt { get; set; }
+    public int? InputTokens { get; set; }
+    public int? OutputTokens { get; set; }
+}
 
 public record ChatRequest(
     string Query,
