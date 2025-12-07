@@ -23,6 +23,7 @@ public interface IGraphRepository
     Task<GraphRelationship?> GetRelationshipByIdAsync(Guid id, CancellationToken cancellationToken = default);
     Task<IEnumerable<GraphRelationship>> GetAllRelationshipsAsync(int limit = 100, IEnumerable<Guid>? documentIds = null, CancellationToken cancellationToken = default);
     Task<IEnumerable<GraphRelationship>> GetRelationshipsByEntityAsync(string entityName, CancellationToken cancellationToken = default);
+    Task<IEnumerable<GraphRelationship>> GetRelationshipsByDocumentIdAsync(Guid documentId, CancellationToken cancellationToken = default);
     Task<GraphRelationship> UpsertRelationshipAsync(GraphRelationship relationship, CancellationToken cancellationToken = default);
     Task<IEnumerable<GraphRelationship>> UpsertRelationshipsAsync(IEnumerable<GraphRelationship> relationships, CancellationToken cancellationToken = default);
     Task DeleteRelationshipAsync(string sourceEntity, string targetEntity, Guid? documentId = null, CancellationToken cancellationToken = default);

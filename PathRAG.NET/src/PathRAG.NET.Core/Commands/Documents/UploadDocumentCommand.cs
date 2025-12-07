@@ -32,6 +32,7 @@ public class UploadDocumentCommandHandler : IRequestHandler<UploadDocumentComman
     private readonly IEmbeddingGenerator<string, Embedding<float>> _embeddingGenerator;
     private readonly PathRAGSettings _settings;
     private readonly IPathRAGLoggerService _logger;
+    private readonly IOrphanEntityRepairService _orphanRepairService;
 
     public UploadDocumentCommandHandler(
         IDocumentRepository documentRepository,
@@ -43,7 +44,8 @@ public class UploadDocumentCommandHandler : IRequestHandler<UploadDocumentComman
         IEntityMergingService entityMergingService,
         IEmbeddingGenerator<string, Embedding<float>> embeddingGenerator,
         PathRAGSettings settings,
-        IPathRAGLoggerService logger)
+        IPathRAGLoggerService logger,
+        IOrphanEntityRepairService orphanRepairService)
     {
         _documentRepository = documentRepository;
         _chunkRepository = chunkRepository;
@@ -55,6 +57,7 @@ public class UploadDocumentCommandHandler : IRequestHandler<UploadDocumentComman
         _embeddingGenerator = embeddingGenerator;
         _settings = settings;
         _logger = logger;
+        _orphanRepairService = orphanRepairService;
     }
 
     public async Task<DocumentUploadResponse> Handle(UploadDocumentCommand request, CancellationToken cancellationToken)
@@ -239,6 +242,21 @@ public class UploadDocumentCommandHandler : IRequestHandler<UploadDocumentComman
                 await _graphVectorRepository.UpsertRelationshipVectorAsync(relationshipVector, cancellationToken);
             }
             await _logger.CompleteStageAsync(stageLogId, itemsProcessed: allRelationshipsData.Count, details: $"Stored {allRelationshipsData.Count} relationship vectors", cancellationToken: cancellationToken);
+
+            stageLogId = await _logger.StartStageAsync(logId, "DOC_REPAIR_ORPHANS", document.Id, "Repair orphaned relationships", cancellationToken: cancellationToken);
+            try
+            {
+                var repairResult = await _orphanRepairService.RepairAsync(document.Id, cancellationToken);
+                await _logger.CompleteStageAsync(stageLogId,
+                    itemsProcessed: repairResult.RelationshipsAdded,
+                    details: $"Reprocessed {repairResult.OrphanEntities} orphan entities and added {repairResult.RelationshipsAdded} relationships",
+                    cancellationToken: cancellationToken);
+            }
+            catch (Exception repairEx)
+            {
+                await _logger.FailStageAsync(stageLogId, repairEx.Message, cancellationToken);
+                throw;
+            }
 
             // Step 10: Update document status
             stageLogId = await _logger.StartStageAsync(logId, "DOC_COMPLETE", document.Id, "Completing document processing", cancellationToken);

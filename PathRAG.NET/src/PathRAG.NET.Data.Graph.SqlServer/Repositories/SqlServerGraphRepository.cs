@@ -226,6 +226,21 @@ public class SqlServerGraphRepository : IGraphRepository
         return result?.ToEntity();
     }
 
+    public async Task<IEnumerable<GraphRelationship>> GetRelationshipsByDocumentIdAsync(Guid documentId, CancellationToken cancellationToken = default)
+    {
+        using var connection = CreateConnection();
+        var sql = $@"
+            SELECT
+                CAST(r.$edge_id AS NVARCHAR(1000)) AS EdgeId,
+                r.Id, r.SourceEntityName, r.TargetEntityName, r.Weight,
+                r.Description, r.Keywords, r.SourceId, r.DocumentId, r.CreatedAt
+            FROM {GraphRelationships} r
+            WHERE r.DocumentId = @DocumentId";
+
+        var results = await connection.QueryAsync<GraphRelationshipDto>(sql, new { DocumentId = documentId });
+        return results.Select(r => r.ToEntity());
+    }
+
     public async Task<IEnumerable<GraphRelationship>> GetAllRelationshipsAsync(int limit = 100, IEnumerable<Guid>? documentIds = null, CancellationToken cancellationToken = default)
     {
         using var connection = CreateConnection();

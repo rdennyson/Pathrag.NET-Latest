@@ -58,6 +58,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IKeywordsExtractionService, KeywordsExtractionService>();
         services.AddScoped<IPathRAGQueryService, PathRAGQueryService>();
         services.AddScoped<IPathRAGLoggerService, PathRAGLoggerService>();
+        services.AddScoped<IOrphanEntityRepairService, OrphanEntityRepairService>();
 
         // Register MediatR
         services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(ServiceCollectionExtensions).Assembly));
@@ -68,4 +69,3 @@ public static class ServiceCollectionExtensions
         return services;
     }
 }
-
