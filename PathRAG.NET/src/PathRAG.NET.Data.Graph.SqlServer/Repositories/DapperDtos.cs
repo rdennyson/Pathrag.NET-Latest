@@ -14,6 +14,7 @@ internal class GraphEntityDto
     public string EntityType { get; set; } = null!;
     public string? Description { get; set; }
     public string? SourceId { get; set; }
+    public Guid DocumentId { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 
     public GraphEntity ToEntity() => new()
@@ -24,6 +25,7 @@ internal class GraphEntityDto
         EntityType = EntityType,
         Description = Description,
         SourceId = SourceId,
+        DocumentId = DocumentId,
         CreatedAt = CreatedAt
     };
 }
@@ -43,6 +45,7 @@ internal class GraphRelationshipDto
     public string? Keywords { get; set; }
     public string? SourceId { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
+    public Guid DocumentId { get; set; }
 
     public GraphRelationship ToEntity() => new()
     {
@@ -54,6 +57,7 @@ internal class GraphRelationshipDto
         Description = Description,
         Keywords = Keywords,
         SourceId = SourceId,
+        DocumentId = DocumentId,
         CreatedAt = CreatedAt
     };
 }
@@ -69,6 +73,7 @@ internal class EntityVectorDto
     public string Content { get; set; } = null!;
     public string? Embedding { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
+    public Guid DocumentId { get; set; }
 
     public EntityVector ToEntity() => new()
     {
@@ -76,7 +81,8 @@ internal class EntityVectorDto
         EntityName = EntityName,
         Content = Content,
         Embedding = ParseVectorString(Embedding),
-        CreatedAt = CreatedAt
+        CreatedAt = CreatedAt,
+        DocumentId = DocumentId
     };
 
     private static float[] ParseVectorString(string? vectorString)
@@ -106,6 +112,7 @@ internal class RelationshipVectorDto
     public string Content { get; set; } = null!;
     public string? Embedding { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
+    public Guid DocumentId { get; set; }
 
     public RelationshipVector ToEntity() => new()
     {
@@ -114,7 +121,8 @@ internal class RelationshipVectorDto
         TargetEntityName = TargetEntityName,
         Content = Content,
         Embedding = ParseVectorString(Embedding),
-        CreatedAt = CreatedAt
+        CreatedAt = CreatedAt,
+        DocumentId = DocumentId
     };
 
     private static float[] ParseVectorString(string? vectorString)
@@ -192,4 +200,3 @@ internal class PathQueryResult
     public string? PathEdgeDescriptions { get; set; }
     public string? LastNode { get; set; }
 }
-

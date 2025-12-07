@@ -16,6 +16,7 @@ public interface IGraphVectorRepository
     Task<IEnumerable<EntityVector>> SearchEntitiesByVectorAsync(
         float[] embedding,
         int topK = 10,
+        IEnumerable<Guid>? documentIds = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -46,6 +47,7 @@ public interface IGraphVectorRepository
     Task<IEnumerable<RelationshipVector>> SearchRelationshipsByVectorAsync(
         float[] embedding,
         int topK = 10,
+        IEnumerable<Guid>? documentIds = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -76,4 +78,3 @@ public interface IGraphVectorRepository
     /// </summary>
     Task InitializeVectorTablesAsync(CancellationToken cancellationToken = default);
 }
-

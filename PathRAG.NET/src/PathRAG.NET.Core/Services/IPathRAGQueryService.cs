@@ -19,7 +19,7 @@ public interface IPathRAGQueryService
     Task<KnowledgeGraphDto> GetQueryGraphAsync(
         string query,
         int topK = 40,
+        IEnumerable<Guid>? documentTypeIds = null,
         Guid? logId = null,
         CancellationToken cancellationToken = default);
 }
-

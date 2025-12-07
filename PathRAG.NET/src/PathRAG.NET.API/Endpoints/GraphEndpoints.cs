@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.AspNetCore.Mvc;
 using PathRAG.NET.Core.Queries.Graph;
 using PathRAG.NET.Models.DTOs;
+using System.Collections.Generic;
 
 namespace PathRAG.NET.API.Endpoints;
 
@@ -31,32 +32,33 @@ public static class GraphEndpoints
         return app;
     }
 
-    private static async Task<IResult> GetKnowledgeGraph(
-        [FromQuery] int limit,
-        [FromServices] IMediator mediator,
-        CancellationToken cancellationToken)
-    {
-        var graph = await mediator.Send(new GetKnowledgeGraphQuery(limit > 0 ? limit : 100), cancellationToken);
-        return Results.Ok(graph);
+        private static async Task<IResult> GetKnowledgeGraph(
+            [FromQuery] int limit,
+            [FromQuery(Name = "documentTypeIds")] Guid[]? documentTypeIds,
+            [FromServices] IMediator mediator,
+            CancellationToken cancellationToken)
+        {
+            var graph = await mediator.Send(new GetKnowledgeGraphQuery(limit > 0 ? limit : 100, documentTypeIds), cancellationToken);
+            return Results.Ok(graph);
+        }
+
+        private static async Task<IResult> GetGraphStats(
+            [FromQuery(Name = "documentTypeIds")] Guid[]? documentTypeIds,
+            [FromServices] IMediator mediator,
+            CancellationToken cancellationToken)
+        {
+            var stats = await mediator.Send(new GetGraphStatsQuery(documentTypeIds), cancellationToken);
+            return Results.Ok(stats);
+        }
+
+        private static async Task<IResult> QueryGraph(
+            [FromBody] GraphQueryRequest request,
+            [FromServices] IMediator mediator,
+            CancellationToken cancellationToken)
+        {
+            var graph = await mediator.Send(new GetQueryGraphQuery(request.Query, request.TopK, request.DocumentTypeIds), cancellationToken);
+            return Results.Ok(graph);
+        }
     }
 
-    private static async Task<IResult> GetGraphStats(
-        [FromServices] IMediator mediator,
-        CancellationToken cancellationToken)
-    {
-        var stats = await mediator.Send(new GetGraphStatsQuery(), cancellationToken);
-        return Results.Ok(stats);
-    }
-
-    private static async Task<IResult> QueryGraph(
-        [FromBody] GraphQueryRequest request,
-        [FromServices] IMediator mediator,
-        CancellationToken cancellationToken)
-    {
-        var graph = await mediator.Send(new GetQueryGraphQuery(request.Query, request.TopK), cancellationToken);
-        return Results.Ok(graph);
-    }
-}
-
-public record GraphQueryRequest(string Query, int TopK = 40);
-
+public record GraphQueryRequest(string Query, int TopK = 40, IEnumerable<Guid>? DocumentTypeIds = null);

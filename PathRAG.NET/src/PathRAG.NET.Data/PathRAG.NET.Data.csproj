@@ -22,5 +22,9 @@
     <ProjectReference Include="..\PathRAG.NET.Models\PathRAG.NET.Models.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="Migrations\" />
+  </ItemGroup>
+
 </Project>
 

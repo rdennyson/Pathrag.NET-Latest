@@ -18,9 +18,9 @@ builder.Services.AddScoped(sp => new HttpClient
 builder.Services.AddScoped<IDocumentService, DocumentService>();
 builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<IGraphService, GraphService>();
+builder.Services.AddScoped<IDocumentTypeService, DocumentTypeService>();
 
 // Add AntDesign
 builder.Services.AddAntDesign();
 
 await builder.Build().RunAsync();
-

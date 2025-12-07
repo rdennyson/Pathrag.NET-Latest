@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using Microsoft.Extensions.AI;
 using PathRAG.NET.Core.Settings;
@@ -22,6 +24,7 @@ public class PathRAGQueryService : IPathRAGQueryService
     private readonly IEmbeddingGenerator<string, Embedding<float>> _embeddingGenerator;
     private readonly PathRAGSettings _settings;
     private readonly IPathRAGLoggerService _logger;
+    private readonly IDocumentRepository _documentRepository;
 
     // Python PathRAG's GRAPH_FIELD_SEP from prompt.py
     private const string GraphFieldSep = "<SEP>";
@@ -33,7 +36,8 @@ public class PathRAGQueryService : IPathRAGQueryService
         IDocumentChunkRepository chunkRepository,
         IEmbeddingGenerator<string, Embedding<float>> embeddingGenerator,
         PathRAGSettings settings,
-        IPathRAGLoggerService logger)
+        IPathRAGLoggerService logger,
+        IDocumentRepository documentRepository)
     {
         _keywordsService = keywordsService;
         _graphRepository = graphRepository;
@@ -42,6 +46,7 @@ public class PathRAGQueryService : IPathRAGQueryService
         _embeddingGenerator = embeddingGenerator;
         _settings = settings;
         _logger = logger;
+        _documentRepository = documentRepository;
     }
 
     /// <summary>
@@ -54,6 +59,7 @@ public class PathRAGQueryService : IPathRAGQueryService
         CancellationToken cancellationToken = default)
     {
         queryParams ??= new QueryParamDto();
+        var documentIds = await ResolveDocumentIdsAsync(queryParams.DocumentTypeIds, cancellationToken);
 
         // If no logId provided, this is a standalone query - create our own operation log
         var isStandaloneQuery = !logId.HasValue;
@@ -80,13 +86,13 @@ public class PathRAGQueryService : IPathRAGQueryService
             // Step 3: Get low-level context using _get_node_data logic
             stageLogId = await _logger.StartStageAsync(logId.Value, "MSG_SEARCH_ENTITIES", message: "Searching entities (low-level)", cancellationToken: cancellationToken);
             var (llEntitiesContext, llRelationsContext, llTextUnitsContext) =
-                await GetNodeDataAsync(llKeywords, queryParams, cancellationToken);
+                await GetNodeDataAsync(llKeywords, queryParams, documentIds, cancellationToken);
             await _logger.CompleteStageAsync(stageLogId, details: $"Found {llEntitiesContext.Split('\n').Length - 2} entities", cancellationToken: cancellationToken);
 
             // Step 4: Get high-level context using _get_edge_data logic
             stageLogId = await _logger.StartStageAsync(logId.Value, "MSG_SEARCH_RELS", message: "Searching relationships (high-level)", cancellationToken: cancellationToken);
             var (hlEntitiesContext, hlRelationsContext, hlTextUnitsContext) =
-                await GetEdgeDataAsync(hlKeywords, queryParams, cancellationToken);
+                await GetEdgeDataAsync(hlKeywords, queryParams, documentIds, cancellationToken);
             await _logger.CompleteStageAsync(stageLogId, details: $"Found {hlRelationsContext.Split('\n').Length - 2} relationships", cancellationToken: cancellationToken);
 
             // Step 5: Combine contexts (matching Python's combine_contexts)
@@ -115,6 +121,18 @@ public class PathRAGQueryService : IPathRAGQueryService
             }
             throw;
         }
+    }
+
+    private async Task<IReadOnlyCollection<Guid>?> ResolveDocumentIdsAsync(IEnumerable<Guid>? documentTypeIds, CancellationToken cancellationToken)
+    {
+        if (documentTypeIds == null || !documentTypeIds.Any())
+        {
+            return null;
+        }
+
+        var ids = await _documentRepository.GetIdsByTypeIdsAsync(documentTypeIds, cancellationToken);
+        var distinctIds = ids.Distinct().ToList();
+        return distinctIds.Any() ? distinctIds : null;
     }
 
     /// <summary>
@@ -153,7 +171,7 @@ public class PathRAGQueryService : IPathRAGQueryService
     /// Get node data matching Python PathRAG's _get_node_data (operate.py lines 686-750)
     /// </summary>
     private async Task<(string EntitiesContext, string RelationsContext, string TextUnitsContext)>
-        GetNodeDataAsync(string keywords, QueryParamDto queryParams, CancellationToken cancellationToken)
+        GetNodeDataAsync(string keywords, QueryParamDto queryParams, IReadOnlyCollection<Guid>? documentIds, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(keywords))
             return ("", "", "");
@@ -164,7 +182,7 @@ public class PathRAGQueryService : IPathRAGQueryService
 
         // Query entities_vdb (matching Python's entities_vdb.query)
         var entityVectors = await _graphVectorRepository.SearchEntitiesByVectorAsync(
-            embeddingArray, queryParams.TopK, cancellationToken);
+            embeddingArray, queryParams.TopK, documentIds, cancellationToken);
 
         if (!entityVectors.Any())
             return ("", "", "");
@@ -173,7 +191,7 @@ public class PathRAGQueryService : IPathRAGQueryService
         var nodeDatas = new List<NodeData>();
         foreach (var ev in entityVectors)
         {
-            var node = await _graphRepository.GetEntityByNameAsync(ev.EntityName, cancellationToken);
+            var node = await _graphRepository.GetEntityByNameAsync(ev.EntityName, cancellationToken: cancellationToken);
             if (node == null) continue;
 
             var degree = await _graphRepository.GetNeighborsAsync(ev.EntityName, 1, cancellationToken);
@@ -191,7 +209,7 @@ public class PathRAGQueryService : IPathRAGQueryService
         var textUnits = await FindMostRelatedTextUnitsFromEntitiesAsync(nodeDatas, queryParams, cancellationToken);
 
         // Find related edges using path algorithm (matching Python's _find_most_related_edges_from_entities3)
-        var relations = await FindMostRelatedEdgesFromEntitiesAsync(nodeDatas, queryParams, cancellationToken);
+        var relations = await FindMostRelatedEdgesFromEntitiesAsync(nodeDatas, queryParams, documentIds, cancellationToken);
 
         // Build CSV context (matching Python's list_of_list_to_csv)
         var entitiesContext = BuildEntitiesCsv(nodeDatas);
@@ -205,7 +223,7 @@ public class PathRAGQueryService : IPathRAGQueryService
     /// Get edge data matching Python PathRAG's _get_edge_data (operate.py lines 826-900)
     /// </summary>
     private async Task<(string EntitiesContext, string RelationsContext, string TextUnitsContext)>
-        GetEdgeDataAsync(string keywords, QueryParamDto queryParams, CancellationToken cancellationToken)
+        GetEdgeDataAsync(string keywords, QueryParamDto queryParams, IReadOnlyCollection<Guid>? documentIds, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(keywords))
             return ("", "", "");
@@ -216,7 +234,7 @@ public class PathRAGQueryService : IPathRAGQueryService
 
         // Query relationships_vdb (matching Python's relationships_vdb.query)
         var relationshipVectors = await _graphVectorRepository.SearchRelationshipsByVectorAsync(
-            embeddingArray, queryParams.TopK, cancellationToken);
+            embeddingArray, queryParams.TopK, documentIds, cancellationToken);
 
         if (!relationshipVectors.Any())
             return ("", "", "");
@@ -225,7 +243,7 @@ public class PathRAGQueryService : IPathRAGQueryService
         var edgeDatas = new List<EdgeData>();
         foreach (var rv in relationshipVectors)
         {
-            var edge = await _graphRepository.GetRelationshipAsync(rv.SourceEntityName, rv.TargetEntityName, cancellationToken);
+            var edge = await _graphRepository.GetRelationshipAsync(rv.SourceEntityName, rv.TargetEntityName, rv.DocumentId, cancellationToken: cancellationToken);
             if (edge == null) continue;
 
             // Edge degree = sum of degrees of both endpoints
@@ -271,14 +289,14 @@ public class PathRAGQueryService : IPathRAGQueryService
     /// Matches Python PathRAG's _find_most_related_edges_from_entities3 (operate.py lines 1107-1239)
     /// </summary>
     private async Task<List<string>> FindMostRelatedEdgesFromEntitiesAsync(
-        List<NodeData> nodeDatas, QueryParamDto queryParams, CancellationToken cancellationToken)
+        List<NodeData> nodeDatas, QueryParamDto queryParams, IReadOnlyCollection<Guid>? documentIds, CancellationToken cancellationToken)
     {
         var sourceNodes = nodeDatas.Select(n => n.EntityName).ToList();
         if (sourceNodes.Count < 2) return [];
 
         // Get all edges and nodes from graph
-        var allRelationships = await _graphRepository.GetAllRelationshipsAsync(1000, cancellationToken);
-        var allEntities = await _graphRepository.GetAllEntitiesAsync(1000, cancellationToken);
+        var allRelationships = await _graphRepository.GetAllRelationshipsAsync(1000, documentIds, cancellationToken);
+        var allEntities = await _graphRepository.GetAllEntitiesAsync(1000, documentIds, cancellationToken);
 
         // Build adjacency list for path finding
         var adjacency = new Dictionary<string, HashSet<string>>();
@@ -370,8 +388,8 @@ public class PathRAGQueryService : IPathRAGQueryService
             var edge = await GetEdgeAsync(path[0], path[1], cancellationToken);
             if (edge == null) return "";
 
-            var s = await _graphRepository.GetEntityByNameAsync(path[0], cancellationToken);
-            var t = await _graphRepository.GetEntityByNameAsync(path[1], cancellationToken);
+            var s = await _graphRepository.GetEntityByNameAsync(path[0], cancellationToken: cancellationToken);
+            var t = await _graphRepository.GetEntityByNameAsync(path[1], cancellationToken: cancellationToken);
             if (s == null || t == null) return "";
 
             var sDesc = $"The entity {path[0]} is a {s.EntityType} with the description({s.Description})";
@@ -387,9 +405,9 @@ public class PathRAGQueryService : IPathRAGQueryService
             var edge1 = await GetEdgeAsync(path[1], path[2], cancellationToken);
             if (edge0 == null || edge1 == null) return "";
 
-            var s = await _graphRepository.GetEntityByNameAsync(path[0], cancellationToken);
-            var b = await _graphRepository.GetEntityByNameAsync(path[1], cancellationToken);
-            var t = await _graphRepository.GetEntityByNameAsync(path[2], cancellationToken);
+            var s = await _graphRepository.GetEntityByNameAsync(path[0], cancellationToken: cancellationToken);
+            var b = await _graphRepository.GetEntityByNameAsync(path[1], cancellationToken: cancellationToken);
+            var t = await _graphRepository.GetEntityByNameAsync(path[2], cancellationToken: cancellationToken);
             if (s == null || b == null || t == null) return "";
 
             var sDesc = $"The entity {path[0]} is a {s.EntityType} with the description({s.Description})";
@@ -408,10 +426,10 @@ public class PathRAGQueryService : IPathRAGQueryService
             var edge2 = await GetEdgeAsync(path[2], path[3], cancellationToken);
             if (edge0 == null || edge1 == null || edge2 == null) return "";
 
-            var s = await _graphRepository.GetEntityByNameAsync(path[0], cancellationToken);
-            var b1 = await _graphRepository.GetEntityByNameAsync(path[1], cancellationToken);
-            var b2 = await _graphRepository.GetEntityByNameAsync(path[2], cancellationToken);
-            var t = await _graphRepository.GetEntityByNameAsync(path[3], cancellationToken);
+            var s = await _graphRepository.GetEntityByNameAsync(path[0], cancellationToken: cancellationToken);
+            var b1 = await _graphRepository.GetEntityByNameAsync(path[1], cancellationToken: cancellationToken);
+            var b2 = await _graphRepository.GetEntityByNameAsync(path[2], cancellationToken: cancellationToken);
+            var t = await _graphRepository.GetEntityByNameAsync(path[3], cancellationToken: cancellationToken);
             if (s == null || b1 == null || b2 == null || t == null) return "";
 
             var sDesc = $"The entity {path[0]} is a {s.EntityType} with the description({s.Description})";
@@ -433,8 +451,8 @@ public class PathRAGQueryService : IPathRAGQueryService
     /// </summary>
     private async Task<GraphRelationship?> GetEdgeAsync(string src, string tgt, CancellationToken cancellationToken)
     {
-        var edge = await _graphRepository.GetRelationshipAsync(src, tgt, cancellationToken);
-        edge ??= await _graphRepository.GetRelationshipAsync(tgt, src, cancellationToken);
+        var edge = await _graphRepository.GetRelationshipAsync(src, tgt, cancellationToken: cancellationToken);
+        edge ??= await _graphRepository.GetRelationshipAsync(tgt, src, cancellationToken: cancellationToken);
         return edge;
     }
 
@@ -645,7 +663,7 @@ public class PathRAGQueryService : IPathRAGQueryService
         var nodeDatas = new List<NodeData>();
         foreach (var name in entityNames)
         {
-            var node = await _graphRepository.GetEntityByNameAsync(name, cancellationToken);
+            var node = await _graphRepository.GetEntityByNameAsync(name, cancellationToken: cancellationToken);
             if (node == null) continue;
 
             var neighbors = await _graphRepository.GetNeighborsAsync(name, 1, cancellationToken);
@@ -682,7 +700,7 @@ public class PathRAGQueryService : IPathRAGQueryService
 
         foreach (var name in entityNames)
         {
-            var node = await _graphRepository.GetEntityByNameAsync(name, cancellationToken);
+            var node = await _graphRepository.GetEntityByNameAsync(name, cancellationToken: cancellationToken);
             if (node == null || string.IsNullOrEmpty(node.SourceId)) continue;
 
             var sourceIds = node.SourceId.Split(GraphFieldSep, StringSplitOptions.RemoveEmptyEntries);
@@ -836,6 +854,7 @@ public class PathRAGQueryService : IPathRAGQueryService
     public async Task<KnowledgeGraphDto> GetQueryGraphAsync(
         string query,
         int topK = 40,
+        IEnumerable<Guid>? documentTypeIds = null,
         Guid? logId = null,
         CancellationToken cancellationToken = default)
     {
@@ -848,6 +867,7 @@ public class PathRAGQueryService : IPathRAGQueryService
         }
 
         Guid stageLogId;
+        var documentIds = await ResolveDocumentIdsAsync(documentTypeIds, cancellationToken);
 
         try
         {
@@ -861,25 +881,25 @@ public class PathRAGQueryService : IPathRAGQueryService
 
             // Stage 2: Load entities
             stageLogId = await _logger.StartStageAsync(logId.Value, "GRAPH_LOAD_ENTITIES", message: "Searching entity vectors", cancellationToken: cancellationToken);
-            var entityVectors = await _graphVectorRepository.SearchEntitiesByVectorAsync(embeddingArray, topK, cancellationToken);
+            var entityVectors = await _graphVectorRepository.SearchEntitiesByVectorAsync(embeddingArray, topK, documentIds, cancellationToken);
             var entityNames = entityVectors.Select(e => e.EntityName).ToList();
-            var entities = await _graphRepository.GetEntitiesByNamesAsync(entityNames, cancellationToken);
+            var entities = await _graphRepository.GetEntitiesByNamesAsync(entityNames, documentIds, cancellationToken);
             await _logger.CompleteStageAsync(stageLogId, itemsProcessed: entities.Count(), details: $"Found {entities.Count()} entities", cancellationToken: cancellationToken);
 
             // Stage 3: Load relationships
             stageLogId = await _logger.StartStageAsync(logId.Value, "GRAPH_LOAD_RELS", message: "Searching relationship vectors", cancellationToken: cancellationToken);
-            var relationshipVectors = await _graphVectorRepository.SearchRelationshipsByVectorAsync(embeddingArray, topK, cancellationToken);
+            var relationshipVectors = await _graphVectorRepository.SearchRelationshipsByVectorAsync(embeddingArray, topK, documentIds, cancellationToken);
             var allRelationships = new List<GraphRelationship>();
             foreach (var rv in relationshipVectors)
             {
-                var rel = await _graphRepository.GetRelationshipAsync(rv.SourceEntityName, rv.TargetEntityName, cancellationToken);
+                var rel = await _graphRepository.GetRelationshipAsync(rv.SourceEntityName, rv.TargetEntityName, rv.DocumentId, cancellationToken: cancellationToken);
                 if (rel != null) allRelationships.Add(rel);
             }
 
             // Also get path relationships
             foreach (var entity in entities.Take(10))
             {
-                var paths = await _graphRepository.GetOneHopPathsAsync(entity.EntityName, cancellationToken);
+                var paths = await _graphRepository.GetOneHopPathsAsync(entity.EntityName, documentIds, cancellationToken);
                 allRelationships.AddRange(paths.Select(p => p.Edge));
             }
             await _logger.CompleteStageAsync(stageLogId, itemsProcessed: allRelationships.Count, details: $"Found {allRelationships.Count} relationships", cancellationToken: cancellationToken);

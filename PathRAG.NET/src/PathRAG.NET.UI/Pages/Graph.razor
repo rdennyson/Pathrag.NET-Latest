@@ -1,6 +1,9 @@
 @page "/graph"
 @implements IDisposable
 @inject IGraphService GraphService
+@inject IDocumentTypeService DocumentTypeService
+@using System.Linq
+@using Microsoft.AspNetCore.Components
 @inject MessageService MessageService
 @inject NavigationManager NavigationManager
 @inject IJSRuntime JS
@@ -93,7 +96,7 @@
                                            Style="width: 80px;" TValue="int" Size="@InputSize.Default" />
                 </SpaceItem>
                 <SpaceItem>
-                    <Button Ghost OnClick="@LoadGraph" Loading="@_loading" Icon="@IconType.Outline.Reload" Style="color: white; border-color: rgba(255,255,255,0.5);">
+                    <Button Ghost OnClick="@LoadGraph" Loading="@_loading" Icon="@IconType.Outline.Reload" Style="color: white; border-color: rgba(255,255,255,0.5);" Disabled="@(!_selectedDocumentTypeIds.Any())">
                         Load Graph
                     </Button>
                 </SpaceItem>
@@ -167,6 +170,14 @@
                         <div style="margin-top: 16px; color: rgba(0,0,0,0.45);">Loading knowledge graph...</div>
                     </div>
                 }
+                else if (!_selectedDocumentTypeIds.Any())
+                {
+                    <div class="empty-state" style="height: 500px;">
+                        <div class="empty-state-description">
+                            Select document types to load a filtered knowledge graph and statistics.
+                        </div>
+                    </div>
+                }
                 else if (_graph == null || !_graph.Nodes.Any())
                 {
                     <div class="empty-state" style="height: 500px;">
@@ -231,7 +242,8 @@
                     </FormItem>
                     <FormItem Style="margin-bottom: 0;">
                         <Button Type="@ButtonType.Primary" HtmlType="submit" Block Loading="@_querying"
-                                Icon="@IconType.Outline.Search">
+                                Icon="@IconType.Outline.Search"
+                                Disabled="@(!_selectedDocumentTypeIds.Any())">
                             Search Knowledge Graph
                         </Button>
                     </FormItem>
@@ -242,6 +254,49 @@
                         <Alert Type="@AlertType.Success" ShowIcon="true"
                                Message="@($"Found {_graph?.Nodes.Count() ?? 0} matching entities")" />
                     </div>
+                }
+            </Body>
+        </Card>
+
+        <Card Bordered="false" Style="margin-bottom: 16px;">
+            <TitleTemplate>
+                <span><Icon Type="filter" Style="margin-right: 8px;" />Document Type Filter</span>
+            </TitleTemplate>
+            <Body>
+                @if (_documentTypesLoading)
+                {
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <Spin Size="small" />
+                        <span>Loading document types...</span>
+                    </div>
+                }
+                else if (_documentTypes == null || !_documentTypes.Any())
+                {
+                    <div style="color: rgba(0,0,0,0.45);">
+                        No document types available.
+                    </div>
+                }
+                else
+                {
+                    <TreeSelect TItem="DocumentTypeDto"
+                                TItemValue="Guid"
+                                DataSource="_documentTypes"
+                                TreeDefaultExpandAll
+                                AllowClear
+                                ShowSearch
+                                Placeholder="Select document types"
+                                Multiple
+                                TreeCheckable
+                                Values="_selectedDocumentTypeIds"
+                                ValuesChanged="OnDocumentTypeSelectionChanged"
+                                Style="width: 100%;"
+                                ItemValue="doc => doc.Id"
+                                ItemLabel="doc => doc.Name"
+                                ChildrenExpression="node => node.DataItem.Children"
+                                TitleExpression="node => node.DataItem.Name"
+                                KeyExpression="node => node.DataItem.Id.ToString()"
+                                IsLeafExpression="node => node.DataItem.Children == null || !node.DataItem.Children.Any()">
+                    </TreeSelect>
                 }
             </Body>
         </Card>
@@ -298,12 +353,13 @@
     private string? _queryResult;
     private SelectedNodeInfo? _selectedNode;
     private bool _cytoscapeInitialized = false;
+    private IEnumerable<DocumentTypeDto> _documentTypes = [];
+    private List<Guid> _selectedDocumentTypeIds = new();
+    private bool _documentTypesLoading;
 
     protected override async Task OnInitializedAsync()
     {
-        var graphTask = LoadGraph();
-        var statsTask = LoadStats();
-        await Task.WhenAll(graphTask, statsTask);
+        await LoadDocumentTypes();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -340,13 +396,21 @@
 
     private async Task LoadGraph()
     {
+        if (!_selectedDocumentTypeIds.Any())
+        {
+            _graph = null;
+            _queryResult = null;
+            StateHasChanged();
+            return;
+        }
+
         _loading = true;
         _cytoscapeInitialized = false;
         StateHasChanged();
         try
         {
             await JS.InvokeVoidAsync("cytoscapeInterop.destroy");
-            _graph = await GraphService.GetKnowledgeGraphAsync(_limit);
+            _graph = await GraphService.GetKnowledgeGraphAsync(_limit, _selectedDocumentTypeIds);
             _queryResult = null;
         }
         catch (Exception ex)
@@ -362,15 +426,51 @@
 
     private async Task LoadStats()
     {
+        if (!_selectedDocumentTypeIds.Any())
+        {
+            _stats = null;
+            StateHasChanged();
+            return;
+        }
+
         try
         {
-            _stats = await GraphService.GetGraphStatsAsync();
+            _stats = await GraphService.GetGraphStatsAsync(_selectedDocumentTypeIds);
             StateHasChanged();
         }
         catch (Exception ex)
         {
             await MessageService.Error($"Failed to load statistics: {ex.Message}");
         }
+    }
+
+    private async Task LoadDocumentTypes()
+    {
+        _documentTypesLoading = true;
+        try
+        {
+            _documentTypes = await DocumentTypeService.GetDocumentTypesAsync();
+        }
+        catch (Exception ex)
+        {
+            await MessageService.Error($"Failed to load document types: {ex.Message}");
+        }
+        finally
+        {
+            _documentTypesLoading = false;
+        }
+    }
+
+    private async Task ApplyDocumentTypeFilter()
+    {
+        await LoadGraph();
+        await LoadStats();
+    }
+
+    private async Task OnDocumentTypeSelectionChanged(IEnumerable<Guid>? values)
+    {
+        _selectedDocumentTypeIds = values?.ToList() ?? new();
+        await ApplyDocumentTypeFilter();
     }
 
     private async Task QueryGraph()
@@ -380,10 +480,16 @@
         _querying = true;
         _cytoscapeInitialized = false;
         StateHasChanged();
+        if (!_selectedDocumentTypeIds.Any())
+        {
+            await MessageService.Warning("Select at least one document type before querying.");
+            return;
+        }
+
         try
         {
             await JS.InvokeVoidAsync("cytoscapeInterop.destroy");
-            _graph = await GraphService.QueryGraphAsync(_queryModel.Query);
+            _graph = await GraphService.QueryGraphAsync(_queryModel.Query, documentTypeIds: _selectedDocumentTypeIds);
             _queryResult = _queryModel.Query;
             await MessageService.Success($"Found {_graph.Nodes.Count()} relevant entities");
         }
@@ -446,4 +552,3 @@
         public string? Description { get; set; }
     }
 }
-

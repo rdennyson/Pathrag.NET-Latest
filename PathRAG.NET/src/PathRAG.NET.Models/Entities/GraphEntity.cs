@@ -38,6 +38,11 @@ public class GraphEntity
     public string? SourceId { get; set; }
 
     /// <summary>
+    /// Document that produced this entity
+    /// </summary>
+    public Guid DocumentId { get; set; }
+
+    /// <summary>
     /// Creation timestamp
     /// </summary>
     public DateTimeOffset CreatedAt { get; set; }

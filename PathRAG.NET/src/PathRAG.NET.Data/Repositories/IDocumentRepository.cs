@@ -11,6 +11,7 @@ public interface IDocumentRepository
     Task<Document> UpdateAsync(Document document, CancellationToken cancellationToken = default);
     Task DeleteAsync(Guid id, CancellationToken cancellationToken = default);
     Task<bool> ExistsAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<IEnumerable<Guid>> GetIdsByTypeIdsAsync(IEnumerable<Guid> documentTypeIds, CancellationToken cancellationToken = default);
 }
 
 public interface IDocumentChunkRepository
@@ -39,4 +40,3 @@ public interface IChatRepository
     Task<IEnumerable<ChatMessage>> GetMessagesByThreadIdAsync(Guid threadId, int? limit = null, CancellationToken cancellationToken = default);
     Task<ChatMessage> AddMessageAsync(ChatMessage message, CancellationToken cancellationToken = default);
 }
-

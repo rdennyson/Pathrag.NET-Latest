@@ -36,7 +36,7 @@ public class EntityMergingService : IEntityMergingService
         ExtractedEntityDto newEntity,
         CancellationToken cancellationToken = default)
     {
-        var existingEntity = await _graphRepository.GetEntityByNameAsync(newEntity.EntityName, cancellationToken);
+        var existingEntity = await _graphRepository.GetEntityByNameAsync(newEntity.EntityName, newEntity.DocumentId, cancellationToken: cancellationToken);
 
         var alreadyEntityTypes = new List<string>();
         var alreadySourceIds = new List<string>();
@@ -79,7 +79,8 @@ public class EntityMergingService : IEntityMergingService
             EntityName = newEntity.EntityName,
             EntityType = entityType,
             Description = mergedDescription,
-            SourceId = mergedSourceId
+            SourceId = mergedSourceId,
+            DocumentId = newEntity.DocumentId
         };
 
         return await _graphRepository.UpsertEntityAsync(graphEntity, cancellationToken);
@@ -93,7 +94,7 @@ public class EntityMergingService : IEntityMergingService
         CancellationToken cancellationToken = default)
     {
         var existingRel = await _graphRepository.GetRelationshipAsync(
-            newRelationship.SourceEntity, newRelationship.TargetEntity, cancellationToken);
+            newRelationship.SourceEntity, newRelationship.TargetEntity, newRelationship.DocumentId, cancellationToken: cancellationToken);
 
         var alreadyWeights = new List<double>();
         var alreadySourceIds = new List<string>();
@@ -130,8 +131,8 @@ public class EntityMergingService : IEntityMergingService
         var mergedSourceId = string.Join(GraphFieldSep, allSourceIds.Distinct());
 
         // Ensure source and target entities exist (matching Python's logic)
-        await EnsureEntityExistsAsync(newRelationship.SourceEntity, mergedSourceId, mergedDescription, cancellationToken);
-        await EnsureEntityExistsAsync(newRelationship.TargetEntity, mergedSourceId, mergedDescription, cancellationToken);
+        await EnsureEntityExistsAsync(newRelationship.SourceEntity, mergedSourceId, mergedDescription, newRelationship.DocumentId, cancellationToken);
+        await EnsureEntityExistsAsync(newRelationship.TargetEntity, mergedSourceId, mergedDescription, newRelationship.DocumentId, cancellationToken);
 
         // Summarize description if too long (matching Python's _handle_entity_relation_summary)
         mergedDescription = await HandleEntityRelationSummaryAsync(
@@ -145,7 +146,8 @@ public class EntityMergingService : IEntityMergingService
             Description = mergedDescription,
             Keywords = mergedKeywords,
             Weight = weight,
-            SourceId = mergedSourceId
+            SourceId = mergedSourceId,
+            DocumentId = newRelationship.DocumentId
         };
 
         return await _graphRepository.UpsertRelationshipAsync(graphRel, cancellationToken);
@@ -158,9 +160,10 @@ public class EntityMergingService : IEntityMergingService
         string entityName,
         string sourceId,
         string description,
+        Guid documentId,
         CancellationToken cancellationToken)
     {
-        if (!await _graphRepository.EntityExistsAsync(entityName, cancellationToken))
+        if (!await _graphRepository.EntityExistsAsync(entityName, documentId, cancellationToken))
         {
             var entity = new GraphEntity
             {
@@ -170,6 +173,7 @@ public class EntityMergingService : IEntityMergingService
                 Description = description,
                 SourceId = sourceId
             };
+            entity.DocumentId = documentId;
             await _graphRepository.UpsertEntityAsync(entity, cancellationToken);
         }
     }

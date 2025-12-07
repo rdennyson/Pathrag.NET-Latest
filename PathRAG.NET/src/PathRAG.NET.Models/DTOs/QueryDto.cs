@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace PathRAG.NET.Models.DTOs;
 
 /// <summary>
@@ -12,7 +14,8 @@ public record QueryParamDto(
     int TopK = 40,
     int MaxTokenForTextUnit = 4000,
     int MaxTokenForGlobalContext = 3000,
-    int MaxTokenForLocalContext = 5000
+    int MaxTokenForLocalContext = 5000,
+    IEnumerable<Guid>? DocumentTypeIds = null
 );
 
 public record KeywordsExtractionResult(
@@ -27,4 +30,3 @@ public record QueryContextDto(
     string LowLevelRelationsContext,
     string TextUnitsContext
 );
-

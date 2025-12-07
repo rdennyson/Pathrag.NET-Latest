@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using PathRAG.NET.Data.Contexts;
 using PathRAG.NET.Models.Entities;
+using System.Linq;
 
 namespace PathRAG.NET.Data.Repositories;
 
@@ -60,6 +61,17 @@ public class DocumentRepository : IDocumentRepository
     public async Task<bool> ExistsAsync(Guid id, CancellationToken cancellationToken = default)
     {
         return await _context.Documents.AnyAsync(d => d.Id == id, cancellationToken);
+    }
+
+    public async Task<IEnumerable<Guid>> GetIdsByTypeIdsAsync(IEnumerable<Guid> documentTypeIds, CancellationToken cancellationToken = default)
+    {
+        if (documentTypeIds == null || !documentTypeIds.Any())
+            return Enumerable.Empty<Guid>();
+
+        return await _context.Documents
+            .Where(d => documentTypeIds.Contains(d.DocumentTypeId))
+            .Select(d => d.Id)
+            .ToListAsync(cancellationToken);
     }
 }
 

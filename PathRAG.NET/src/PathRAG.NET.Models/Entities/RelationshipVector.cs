@@ -36,5 +36,10 @@ public class RelationshipVector
     /// Creation timestamp
     /// </summary>
     public DateTimeOffset CreatedAt { get; set; }
+
+    /// <summary>
+    /// Document that produced this relationship vector
+    /// </summary>
+    public Guid DocumentId { get; set; }
 }
 

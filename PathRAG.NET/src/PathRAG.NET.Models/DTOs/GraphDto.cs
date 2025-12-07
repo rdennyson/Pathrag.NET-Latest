@@ -66,7 +66,8 @@ public record ExtractedEntityDto(
     string EntityName,
     string EntityType,
     string Description,
-    string SourceId
+    string SourceId,
+    Guid DocumentId
 );
 
 public record ExtractedRelationshipDto(
@@ -75,7 +76,8 @@ public record ExtractedRelationshipDto(
     string Description,
     string Keywords,
     double Weight,
-    string SourceId
+    string SourceId,
+    Guid DocumentId
 );
 
 public class GraphStatsDto

@@ -9,6 +9,8 @@ public class Document
     public required string Name { get; set; }
     public string? ContentType { get; set; }
     public long FileSize { get; set; }
+    public Guid DocumentTypeId { get; set; }
+    public virtual DocumentType DocumentType { get; set; } = null!;
     public string Status { get; set; } = "pending"; // pending, processing, completed, failed
     public string? ErrorMessage { get; set; }
     public DateTimeOffset CreationDate { get; set; }

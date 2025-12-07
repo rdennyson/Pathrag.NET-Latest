@@ -31,5 +31,10 @@ public class EntityVector
     /// Creation timestamp
     /// </summary>
     public DateTimeOffset CreatedAt { get; set; }
+
+    /// <summary>
+    /// Document that produced this entity vector
+    /// </summary>
+    public Guid DocumentId { get; set; }
 }
 

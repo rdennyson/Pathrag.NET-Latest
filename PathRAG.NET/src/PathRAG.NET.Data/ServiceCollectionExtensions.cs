@@ -25,6 +25,7 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<IDocumentRepository, DocumentRepository>();
         services.AddScoped<IDocumentChunkRepository, DocumentChunkRepository>();
+        services.AddScoped<IDocumentTypeRepository, DocumentTypeRepository>();
         services.AddScoped<IChatRepository, ChatRepository>();
         services.AddScoped<IPathRAGLogRepository, PathRAGLogRepository>();
 

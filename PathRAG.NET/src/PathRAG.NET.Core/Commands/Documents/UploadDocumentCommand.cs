@@ -13,7 +13,8 @@ namespace PathRAG.NET.Core.Commands.Documents;
 public record UploadDocumentCommand(
     string FileName,
     string ContentType,
-    Stream FileStream
+    Stream FileStream,
+    Guid DocumentTypeId
 ) : IRequest<DocumentUploadResponse>;
 
 /// <summary>
@@ -74,7 +75,8 @@ public class UploadDocumentCommandHandler : IRequestHandler<UploadDocumentComman
             Name = request.FileName,
             ContentType = request.ContentType,
             FileSize = request.FileStream.Length,
-            Status = "processing"
+            Status = "processing",
+            DocumentTypeId = request.DocumentTypeId,
         };
         await _documentRepository.AddAsync(document, cancellationToken);
         await _logger.CompleteStageAsync(stageLogId, details: $"Document ID: {document.Id}", cancellationToken: cancellationToken);
@@ -134,7 +136,7 @@ public class UploadDocumentCommandHandler : IRequestHandler<UploadDocumentComman
             foreach (var chunk in chunks)
             {
                 var (entities, relationships) = await _entityExtractor.ExtractEntitiesAndRelationshipsAsync(
-                    chunk.Content, chunk.Id, cancellationToken);
+                    chunk.Content, document.Id, chunk.Id, cancellationToken);
 
                 // Group entities by name (matching Python's maybe_nodes dict)
                 foreach (var entity in entities)
@@ -207,6 +209,7 @@ public class UploadDocumentCommandHandler : IRequestHandler<UploadDocumentComman
                     Id = Guid.NewGuid(),
                     EntityName = entity.EntityName,
                     Content = entityContent,
+                    DocumentId = document.Id,
                     Embedding = embeddingResult[0].Vector.ToArray()
                 };
                 await _graphVectorRepository.UpsertEntityVectorAsync(entityVector, cancellationToken);
@@ -230,6 +233,7 @@ public class UploadDocumentCommandHandler : IRequestHandler<UploadDocumentComman
                     SourceEntityName = rel.SourceEntityName,
                     TargetEntityName = rel.TargetEntityName,
                     Content = relContent,
+                    DocumentId = document.Id,
                     Embedding = embeddingResult[0].Vector.ToArray()
                 };
                 await _graphVectorRepository.UpsertRelationshipVectorAsync(relationshipVector, cancellationToken);

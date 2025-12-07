@@ -58,6 +58,7 @@ app.UseCors();
 
 // Map endpoints
 app.MapDocumentEndpoints();
+app.MapDocumentTypeEndpoints();
 app.MapChatEndpoints();
 app.MapGraphEndpoints();
 app.MapLogEndpoints();

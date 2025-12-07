@@ -12,8 +12,8 @@ using PathRAG.NET.Data.Contexts;
 namespace PathRAG.NET.Data.Migrations
 {
     [DbContext(typeof(PathRAGDbContext))]
-    [Migration("20251206190826_SeedPathRAGStages")]
-    partial class SeedPathRAGStages
+    [Migration("20251206222900_InitialMigration")]
+    partial class InitialMigration
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -104,6 +104,9 @@ namespace PathRAG.NET.Data.Migrations
                         .HasColumnType("datetimeoffset")
                         .HasDefaultValueSql("SYSDATETIMEOFFSET()");
 
+                    b.Property<Guid>("DocumentTypeId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("ErrorMessage")
                         .HasColumnType("nvarchar(max)");
 
@@ -126,6 +129,8 @@ namespace PathRAG.NET.Data.Migrations
                         .HasDefaultValue("pending");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("DocumentTypeId");
 
                     b.ToTable("Documents", "PathRAG");
                 });
@@ -165,6 +170,100 @@ namespace PathRAG.NET.Data.Migrations
                     b.HasIndex("DocumentId");
 
                     b.ToTable("DocumentChunks", "PathRAG");
+                });
+
+            modelBuilder.Entity("PathRAG.NET.Models.Entities.DocumentType", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<Guid?>("ParentDocumentTypeId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ParentDocumentTypeId");
+
+                    b.ToTable("DocumentTypes", "PathRAG");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000001"),
+                            Description = "General files without a specialized category",
+                            Name = "General Documents"
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000002"),
+                            Description = "Human resources policies, onboarding, and compliance",
+                            Name = "HR Documents"
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000003"),
+                            Description = "Formal policy files created by HR",
+                            Name = "Policy Documents",
+                            ParentDocumentTypeId = new Guid("00000000-0000-0000-0000-000000000002")
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000004"),
+                            Description = "Leave, PTO, and time-off policies",
+                            Name = "Leave Policies",
+                            ParentDocumentTypeId = new Guid("00000000-0000-0000-0000-000000000003")
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000005"),
+                            Description = "Travel, expense, and reimbursement guidelines",
+                            Name = "Travel Policies",
+                            ParentDocumentTypeId = new Guid("00000000-0000-0000-0000-000000000003")
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000006"),
+                            Description = "Benefits, compensation, and perks documentation",
+                            Name = "Benefits Policies",
+                            ParentDocumentTypeId = new Guid("00000000-0000-0000-0000-000000000003")
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000007"),
+                            Description = "New hire and onboarding materials",
+                            Name = "Onboarding Documents",
+                            ParentDocumentTypeId = new Guid("00000000-0000-0000-0000-000000000002")
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000008"),
+                            Description = "Budgets, forecasts, and compliance materials",
+                            Name = "Finance Documents"
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-000000000009"),
+                            Description = "Monthly and quarterly budget reports",
+                            Name = "Budget Reports",
+                            ParentDocumentTypeId = new Guid("00000000-0000-0000-0000-000000000008")
+                        },
+                        new
+                        {
+                            Id = new Guid("00000000-0000-0000-0000-00000000000a"),
+                            Description = "Finance expense policy documentation",
+                            Name = "Expense Policies",
+                            ParentDocumentTypeId = new Guid("00000000-0000-0000-0000-000000000008")
+                        });
                 });
 
             modelBuilder.Entity("PathRAG.NET.Models.Entities.PathRAGLog", b =>
@@ -580,6 +679,17 @@ namespace PathRAG.NET.Data.Migrations
                     b.Navigation("Thread");
                 });
 
+            modelBuilder.Entity("PathRAG.NET.Models.Entities.Document", b =>
+                {
+                    b.HasOne("PathRAG.NET.Models.Entities.DocumentType", "DocumentType")
+                        .WithMany("Documents")
+                        .HasForeignKey("DocumentTypeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("DocumentType");
+                });
+
             modelBuilder.Entity("PathRAG.NET.Models.Entities.DocumentChunk", b =>
                 {
                     b.HasOne("PathRAG.NET.Models.Entities.Document", "Document")
@@ -589,6 +699,16 @@ namespace PathRAG.NET.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Document");
+                });
+
+            modelBuilder.Entity("PathRAG.NET.Models.Entities.DocumentType", b =>
+                {
+                    b.HasOne("PathRAG.NET.Models.Entities.DocumentType", "ParentDocumentType")
+                        .WithMany("Children")
+                        .HasForeignKey("ParentDocumentTypeId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("ParentDocumentType");
                 });
 
             modelBuilder.Entity("PathRAG.NET.Models.Entities.PathRAGStageLog", b =>
@@ -618,6 +738,13 @@ namespace PathRAG.NET.Data.Migrations
             modelBuilder.Entity("PathRAG.NET.Models.Entities.Document", b =>
                 {
                     b.Navigation("Chunks");
+                });
+
+            modelBuilder.Entity("PathRAG.NET.Models.Entities.DocumentType", b =>
+                {
+                    b.Navigation("Children");
+
+                    b.Navigation("Documents");
                 });
 
             modelBuilder.Entity("PathRAG.NET.Models.Entities.PathRAGLog", b =>

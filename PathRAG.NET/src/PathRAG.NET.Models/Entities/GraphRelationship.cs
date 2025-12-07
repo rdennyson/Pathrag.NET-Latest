@@ -48,6 +48,11 @@ public class GraphRelationship
     public string? SourceId { get; set; }
 
     /// <summary>
+    /// Document that produced this relationship
+    /// </summary>
+    public Guid DocumentId { get; set; }
+
+    /// <summary>
     /// Creation timestamp
     /// </summary>
     public DateTimeOffset CreatedAt { get; set; }

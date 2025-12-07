@@ -1,8 +1,10 @@
 @page "/chat"
 @page "/chat/{ThreadId:guid}"
 @inject IChatService ChatService
+@inject IDocumentTypeService DocumentTypeService
 @inject NavigationManager Navigation
 @inject MessageService MessageService
+@using System.Linq
 
 <PageTitle>Chat - PathRAG.NET</PageTitle>
 
@@ -107,6 +109,44 @@
                     </div>
                 </div>
 
+                <div style="margin: 12px 0;">
+                    @if (_documentTypesLoading)
+                    {
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <Spin Size="small" />
+                            Loading document types...
+                        </div>
+                    }
+                    else if (_documentTypes == null || !_documentTypes.Any())
+                    {
+                        <div style="color: rgba(0,0,0,0.45);">
+                            No document types configured.
+                        </div>
+                    }
+                    else
+                    {
+                        <TreeSelect TItem="DocumentTypeDto"
+                                    TItemValue="Guid"
+                                    DataSource="_documentTypes"
+                                    Placeholder="Select document types"
+                                    TreeDefaultExpandAll
+                                    Multiple
+                                    TreeCheckable
+                                    AllowClear
+                                    ShowSearch
+                                    Values="_selectedDocumentTypeIds"
+                                    ValuesChanged="OnDocumentTypeSelectionChanged"
+                                    Style="width: 100%;"
+                                    ItemValue="doc => doc.Id"
+                                    ItemLabel="doc => doc.Name"
+                                    ChildrenExpression="node => node.DataItem.Children"
+                                    TitleExpression="node => node.DataItem.Name"
+                                    KeyExpression="node => node.DataItem.Id.ToString()"
+                                    IsLeafExpression="node => node.DataItem.Children == null || !node.DataItem.Children.Any()">
+                        </TreeSelect>
+                    }
+                </div>
+
                 @* Messages Area *@
                 <div class="chat-messages" @ref="_messagesContainer">
                     @if (_messages == null || !_messages.Any())
@@ -177,7 +217,7 @@
                                 Icon="@IconType.Outline.Send"
                                 OnClick="@SendMessage"
                                 Loading="@_isLoading"
-                                Disabled="@string.IsNullOrWhiteSpace(_inputMessage)"
+                                Disabled="@(!_selectedDocumentTypeIds.Any() || string.IsNullOrWhiteSpace(_inputMessage))"
                                 Style="height: 40px; border-radius: 8px;">
                             Send
                         </Button>
@@ -199,9 +239,13 @@
     private string _inputMessage = "";
     private bool _isLoading;
     private ElementReference _messagesContainer;
+    private IEnumerable<DocumentTypeDto> _documentTypes = [];
+    private List<Guid> _selectedDocumentTypeIds = new();
+    private bool _documentTypesLoading;
 
     protected override async Task OnInitializedAsync()
     {
+        await LoadDocumentTypes();
         await LoadThreads();
     }
 
@@ -225,6 +269,23 @@
         {
             _messages = await ChatService.GetMessagesAsync(ThreadId.Value);
             StateHasChanged();
+        }
+    }
+
+    private async Task LoadDocumentTypes()
+    {
+        _documentTypesLoading = true;
+        try
+        {
+            _documentTypes = await DocumentTypeService.GetDocumentTypesAsync();
+        }
+        catch (Exception ex)
+        {
+            await MessageService.Error($"Failed to load document types: {ex.Message}");
+        }
+        finally
+        {
+            _documentTypesLoading = false;
         }
     }
 
@@ -258,6 +319,11 @@
     private async Task SendMessage()
     {
         if (string.IsNullOrWhiteSpace(_inputMessage) || !ThreadId.HasValue) return;
+        if (!_selectedDocumentTypeIds.Any())
+        {
+            await MessageService.Warning("Select at least one document type before sending a message.");
+            return;
+        }
 
         var message = _inputMessage.Trim();
         _inputMessage = "";
@@ -266,7 +332,7 @@
 
         try
         {
-            await ChatService.SendMessageAsync(ThreadId.Value, message);
+            await ChatService.SendMessageAsync(ThreadId.Value, message, _selectedDocumentTypeIds);
             await LoadMessages();
             await LoadThreads(); // Refresh to update thread title if changed
         }
@@ -281,5 +347,11 @@
             StateHasChanged();
         }
     }
-}
 
+    private Task OnDocumentTypeSelectionChanged(IEnumerable<Guid>? values)
+    {
+        _selectedDocumentTypeIds = values?.ToList() ?? new();
+        return Task.CompletedTask;
+    }
+
+}

@@ -1,5 +1,10 @@
 @page "/documents"
+@using System.IO
+@using System.Linq
+@using Microsoft.AspNetCore.Components
 @inject IDocumentService DocumentService
+@inject IDocumentTypeService DocumentTypeService
+@using PathRAG.NET.Models.Entities
 @inject MessageService MessageService
 
 <PageTitle>Documents - PathRAG.NET</PageTitle>
@@ -179,9 +184,9 @@
                 </div>
             </label>
         }
-        else
-        {
-            <Card Bordered Style="margin-bottom: 16px;">
+            else
+            {
+                <Card Bordered Style="margin-bottom: 16px;">
                 <div style="display: flex; align-items: center; gap: 16px;">
                     <Avatar Size="48" Style="@($"background-color: {GetFileColor(_selectedFile.Name)}")">
                         <Icon Type="@GetFileIcon(_selectedFile.Name)" Style="font-size: 24px;" />
@@ -197,18 +202,59 @@
                     <Button Type="@ButtonType.Text" Icon="@IconType.Outline.Close"
                             OnClick="@ClearSelectedFile" />
                 </div>
-            </Card>
+                </Card>
 
-            <Alert Type="@AlertType.Info" ShowIcon="true"
-                   Message="Ready to upload"
-                   Description="The document will be processed automatically after upload. Entity extraction and knowledge graph building may take a few minutes." />
+                <Card Bordered="false" Style="margin-bottom: 16px;">
+                    <TitleTemplate>
+                        <span><Icon Type="tag" Style="margin-right: 4px;" />Document Type</span>
+                    </TitleTemplate>
+                    <Body>
+                        @if (_documentTypesLoading)
+                        {
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <Spin Size="small" />
+                                <span>Loading document types...</span>
+                            </div>
+                        }
+                        else if (_documentTypes == null || !_documentTypes.Any())
+                        {
+                            <div style="color: rgba(0,0,0,0.45);">
+                                No document types configured.
+                            </div>
+                        }
+                        else
+                        {
+                            <TreeSelect TItem="DocumentTypeDto"
+                                        TItemValue="Guid"
+                                        Style="width: 100%;"
+                                        Placeholder="Select a document type"
+                                        TreeDefaultExpandAll
+                                        AllowClear
+                                        DataSource="_documentTypes"
+                                        Value="_selectedDocumentTypeId ?? Guid.Empty"
+                                        ValueChanged="OnDocumentTypeSelected"
+                                        ItemValue="doc => doc.Id"
+                                        ItemLabel="doc => doc.Name"
+                                        ChildrenExpression="node => node.DataItem.Children"
+                                        TitleExpression="node => node.DataItem.Name"
+                                        KeyExpression="node => node.DataItem.Id.ToString()"
+                                        IsLeafExpression="node => node.DataItem.Children == null || !node.DataItem.Children.Any()">
+                            </TreeSelect>
+                        }
+                    </Body>
+                </Card>
+
+                <Alert Type="@AlertType.Info" ShowIcon="true"
+                       Message="Ready to upload"
+                       Description="The document will be processed automatically after upload. Entity extraction and knowledge graph building may take a few minutes." />
 
             <div style="margin-top: 24px; display: flex; gap: 12px; justify-content: flex-end;">
                 <Button OnClick="@CloseUploadModal">Cancel</Button>
                 <Button Type="@ButtonType.Primary"
                         Loading="@_uploading"
                         OnClick="@UploadFile"
-                        Icon="@IconType.Outline.Upload">
+                        Icon="@IconType.Outline.Upload"
+                        Disabled="@(!_selectedDocumentTypeId.HasValue || _selectedFile == null)">
                     Upload and Process
                 </Button>
             </div>
@@ -223,9 +269,13 @@
     private bool _uploading;
     private IBrowserFile? _selectedFile;
     private Guid _inputFileKey = Guid.NewGuid();
+    private IEnumerable<DocumentTypeDto> _documentTypes = [];
+    private Guid? _selectedDocumentTypeId;
+    private bool _documentTypesLoading;
 
     protected override async Task OnInitializedAsync()
     {
+        await LoadDocumentTypes();
         await LoadDocuments();
     }
 
@@ -233,9 +283,36 @@
     {
         _loading = true;
         StateHasChanged();
-        _documents = await DocumentService.GetDocumentsAsync();
-        _loading = false;
-        StateHasChanged();
+        try
+        {
+            _documents = await DocumentService.GetDocumentsAsync();
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadDocumentTypes()
+    {
+        _documentTypesLoading = true;
+        try
+        {
+            _documentTypes = await DocumentTypeService.GetDocumentTypesAsync();
+            if (!_documentTypes.Any())
+            {
+                _selectedDocumentTypeId = DocumentTypeConstants.GeneralDocumentTypeId;
+            }
+        }
+        catch (Exception ex)
+        {
+            await MessageService.Error($"Failed to load document types: {ex.Message}");
+        }
+        finally
+        {
+            _documentTypesLoading = false;
+        }
     }
 
     private void OnFileSelected(InputFileChangeEventArgs e)
@@ -247,28 +324,34 @@
     private void ClearSelectedFile()
     {
         _selectedFile = null;
-        _inputFileKey = Guid.NewGuid(); // Reset the InputFile component
+        _inputFileKey = Guid.NewGuid();
     }
 
     private void CloseUploadModal()
     {
         _uploadVisible = false;
         _selectedFile = null;
-        _inputFileKey = Guid.NewGuid(); // Reset the InputFile component
+        _inputFileKey = Guid.NewGuid();
+        _selectedDocumentTypeId = null;
     }
 
     private async Task UploadFile()
     {
-        if (_selectedFile == null) return;
+        if (_selectedFile == null || !_selectedDocumentTypeId.HasValue)
+        {
+            await MessageService.Warning("Select a document type and file before uploading.");
+            return;
+        }
 
         _uploading = true;
         try
         {
             using var stream = _selectedFile.OpenReadStream(maxAllowedSize: 50 * 1024 * 1024);
-            await DocumentService.UploadDocumentAsync(stream, _selectedFile.Name, _selectedFile.ContentType);
+            await DocumentService.UploadDocumentAsync(stream, _selectedFile.Name, _selectedFile.ContentType, _selectedDocumentTypeId.Value);
             await MessageService.Success("Document uploaded successfully! Processing will begin shortly.");
             _uploadVisible = false;
             _selectedFile = null;
+            _selectedDocumentTypeId = null;
             await LoadDocuments();
         }
         catch (Exception ex)
@@ -279,6 +362,12 @@
         {
             _uploading = false;
         }
+    }
+
+    private Task OnDocumentTypeSelected(Guid value)
+    {
+        _selectedDocumentTypeId = value == Guid.Empty ? null : value;
+        return Task.CompletedTask;
     }
 
     private async Task DeleteDocument(Guid id)
@@ -345,5 +434,5 @@
         while (size >= 1024 && order < sizes.Length - 1) { order++; size /= 1024; }
         return $"{size:0.##} {sizes[order]}";
     }
-}
 
+}

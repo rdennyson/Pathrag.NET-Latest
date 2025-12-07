@@ -10,7 +10,7 @@ public interface IChatService
     Task<ChatThreadDto> CreateThreadAsync(string? title = null);
     Task<bool> DeleteThreadAsync(Guid id);
     Task<IEnumerable<ChatMessageDto>> GetMessagesAsync(Guid threadId);
-    Task<ChatMessageDto> SendMessageAsync(Guid threadId, string message);
+    Task<ChatMessageDto> SendMessageAsync(Guid threadId, string message, IEnumerable<Guid>? documentTypeIds = null);
 }
 
 public class ChatService : IChatService
@@ -53,12 +53,16 @@ public class ChatService : IChatService
         return response ?? Enumerable.Empty<ChatMessageDto>();
     }
 
-    public async Task<ChatMessageDto> SendMessageAsync(Guid threadId, string message)
+    public async Task<ChatMessageDto> SendMessageAsync(Guid threadId, string message, IEnumerable<Guid>? documentTypeIds = null)
     {
-        var response = await _httpClient.PostAsJsonAsync($"api/chat/threads/{threadId}/messages", new { Message = message });
+        var payload = new
+        {
+            Message = message,
+            QueryParams = new QueryParamDto(DocumentTypeIds: documentTypeIds)
+        };
+        var response = await _httpClient.PostAsJsonAsync($"api/chat/threads/{threadId}/messages", payload);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<ChatMessageDto>()
             ?? throw new InvalidOperationException("Failed to send message");
     }
 }
-

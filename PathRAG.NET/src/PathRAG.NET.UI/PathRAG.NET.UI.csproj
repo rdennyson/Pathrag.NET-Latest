@@ -12,6 +12,7 @@
     <PackageReference Include="AntDesign.ProLayout" Version="1.0.0" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="9.0.6" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="9.0.6" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.AspNetCore.WebUtilities" Version="9.0.0" />
   </ItemGroup>
 
   <ItemGroup>
@@ -19,4 +20,3 @@
   </ItemGroup>
 
 </Project>
-

@@ -34,19 +34,29 @@ public class SqlServerGraphVectorRepository : IGraphVectorRepository
     public async Task<IEnumerable<EntityVector>> SearchEntitiesByVectorAsync(
         float[] embedding,
         int topK = 10,
+        IEnumerable<Guid>? documentIds = null,
         CancellationToken cancellationToken = default)
     {
         using var connection = CreateConnection();
         var embeddingJson = $"[{string.Join(",", embedding)}]";
 
+        var documentIdArray = documentIds as Guid[] ?? documentIds?.ToArray();
+        var filterClause = documentIdArray?.Length > 0 ? "WHERE DocumentId IN @DocumentIds" : string.Empty;
+
         var sql = $@"
             SELECT TOP (@TopK)
-                Id, EntityName, Content, Embedding, CreatedAt,
+                Id, EntityName, Content, Embedding, DocumentId, CreatedAt,
                 VECTOR_DISTANCE('cosine', Embedding, CAST(@EmbeddingJson AS VECTOR({_embeddingDimensions}))) AS Distance
             FROM {EntityVectors}
+            {filterClause}
             ORDER BY VECTOR_DISTANCE('cosine', Embedding, CAST(@EmbeddingJson AS VECTOR({_embeddingDimensions})))";
 
-        var results = await connection.QueryAsync<EntityVectorDto>(sql, new { TopK = topK, EmbeddingJson = embeddingJson });
+        var results = await connection.QueryAsync<EntityVectorDto>(sql, new
+        {
+            TopK = topK,
+            EmbeddingJson = embeddingJson,
+            DocumentIds = documentIdArray
+        });
         return results.Select(r => r.ToEntity());
     }
 
@@ -62,18 +72,18 @@ public class SqlServerGraphVectorRepository : IGraphVectorRepository
 
         var sql = $@"
             MERGE {EntityVectors} AS target
-            USING (SELECT @EntityName AS EntityName) AS source
-            ON target.EntityName = source.EntityName
+            USING (SELECT @EntityName AS EntityName, @DocumentId AS DocumentId) AS source
+            ON target.EntityName = source.EntityName AND target.DocumentId = source.DocumentId
             WHEN MATCHED THEN
                 UPDATE SET
                     Content = @Content,
                     Embedding = CAST(@EmbeddingJson AS VECTOR({_embeddingDimensions}))
             WHEN NOT MATCHED THEN
-                INSERT (Id, EntityName, Content, Embedding, CreatedAt)
-                VALUES (@Id, @EntityName, @Content, CAST(@EmbeddingJson AS VECTOR({_embeddingDimensions})), @CreatedAt);
+                INSERT (Id, EntityName, Content, Embedding, DocumentId, CreatedAt)
+                VALUES (@Id, @EntityName, @Content, CAST(@EmbeddingJson AS VECTOR({_embeddingDimensions})), @DocumentId, @CreatedAt);
 
-            SELECT Id, EntityName, Content, Embedding, CreatedAt
-            FROM {EntityVectors} WHERE EntityName = @EntityName;";
+            SELECT Id, EntityName, Content, Embedding, DocumentId, CreatedAt
+            FROM {EntityVectors} WHERE EntityName = @EntityName AND DocumentId = @DocumentId;";
 
         var result = await connection.QueryFirstOrDefaultAsync<EntityVectorDto>(sql, new
         {
@@ -81,7 +91,8 @@ public class SqlServerGraphVectorRepository : IGraphVectorRepository
             entityVector.EntityName,
             entityVector.Content,
             EmbeddingJson = embeddingJson,
-            entityVector.CreatedAt
+            entityVector.CreatedAt,
+            entityVector.DocumentId
         });
 
         return result?.ToEntity() ?? entityVector;
@@ -90,7 +101,7 @@ public class SqlServerGraphVectorRepository : IGraphVectorRepository
     public async Task<IEnumerable<EntityVector>> GetAllEntityVectorsAsync(CancellationToken cancellationToken = default)
     {
         using var connection = CreateConnection();
-        var sql = $"SELECT Id, EntityName, Content, Embedding, CreatedAt FROM {EntityVectors}";
+        var sql = $"SELECT Id, EntityName, Content, Embedding, DocumentId, CreatedAt FROM {EntityVectors}";
         var results = await connection.QueryAsync<EntityVectorDto>(sql);
         return results.Select(r => r.ToEntity());
     }
@@ -109,19 +120,29 @@ public class SqlServerGraphVectorRepository : IGraphVectorRepository
     public async Task<IEnumerable<RelationshipVector>> SearchRelationshipsByVectorAsync(
         float[] embedding,
         int topK = 10,
+        IEnumerable<Guid>? documentIds = null,
         CancellationToken cancellationToken = default)
     {
         using var connection = CreateConnection();
         var embeddingJson = $"[{string.Join(",", embedding)}]";
 
+        var documentIdArray = documentIds as Guid[] ?? documentIds?.ToArray();
+        var filterClause = documentIdArray?.Length > 0 ? "WHERE DocumentId IN @DocumentIds" : string.Empty;
+
         var sql = $@"
             SELECT TOP (@TopK)
-                Id, SourceEntityName, TargetEntityName, Content, Embedding, CreatedAt,
+                Id, SourceEntityName, TargetEntityName, Content, Embedding, DocumentId, CreatedAt,
                 VECTOR_DISTANCE('cosine', Embedding, CAST(@EmbeddingJson AS VECTOR({_embeddingDimensions}))) AS Distance
             FROM {RelationshipVectors}
+            {filterClause}
             ORDER BY VECTOR_DISTANCE('cosine', Embedding, CAST(@EmbeddingJson AS VECTOR({_embeddingDimensions})))";
 
-        var results = await connection.QueryAsync<RelationshipVectorDto>(sql, new { TopK = topK, EmbeddingJson = embeddingJson });
+        var results = await connection.QueryAsync<RelationshipVectorDto>(sql, new
+        {
+            TopK = topK,
+            EmbeddingJson = embeddingJson,
+            DocumentIds = documentIdArray
+        });
         return results.Select(r => r.ToEntity());
     }
 
@@ -138,18 +159,18 @@ public class SqlServerGraphVectorRepository : IGraphVectorRepository
 
         var sql = $@"
             MERGE {RelationshipVectors} AS target
-            USING (SELECT @SourceEntityName AS Src, @TargetEntityName AS Tgt) AS source
-            ON target.SourceEntityName = source.Src AND target.TargetEntityName = source.Tgt
+            USING (SELECT @SourceEntityName AS Src, @TargetEntityName AS Tgt, @DocumentId AS DocumentId) AS source
+            ON target.SourceEntityName = source.Src AND target.TargetEntityName = source.Tgt AND target.DocumentId = source.DocumentId
             WHEN MATCHED THEN
                 UPDATE SET
                     Content = @Content,
                     Embedding = CAST(@EmbeddingJson AS VECTOR({_embeddingDimensions}))
             WHEN NOT MATCHED THEN
-                INSERT (Id, SourceEntityName, TargetEntityName, Content, Embedding, CreatedAt)
-                VALUES (@Id, @SourceEntityName, @TargetEntityName, @Content, CAST(@EmbeddingJson AS VECTOR({_embeddingDimensions})), @CreatedAt);
+                INSERT (Id, SourceEntityName, TargetEntityName, Content, Embedding, DocumentId, CreatedAt)
+                VALUES (@Id, @SourceEntityName, @TargetEntityName, @Content, CAST(@EmbeddingJson AS VECTOR({_embeddingDimensions})), @DocumentId, @CreatedAt);
 
-            SELECT Id, SourceEntityName, TargetEntityName, Content, Embedding, CreatedAt
-            FROM {RelationshipVectors} WHERE SourceEntityName = @SourceEntityName AND TargetEntityName = @TargetEntityName;";
+            SELECT Id, SourceEntityName, TargetEntityName, Content, Embedding, DocumentId, CreatedAt
+            FROM {RelationshipVectors} WHERE SourceEntityName = @SourceEntityName AND TargetEntityName = @TargetEntityName AND DocumentId = @DocumentId;";
 
         var result = await connection.QueryFirstOrDefaultAsync<RelationshipVectorDto>(sql, new
         {
@@ -158,7 +179,8 @@ public class SqlServerGraphVectorRepository : IGraphVectorRepository
             relationshipVector.TargetEntityName,
             relationshipVector.Content,
             EmbeddingJson = embeddingJson,
-            relationshipVector.CreatedAt
+            relationshipVector.CreatedAt,
+            relationshipVector.DocumentId
         });
 
         return result?.ToEntity() ?? relationshipVector;
@@ -167,7 +189,7 @@ public class SqlServerGraphVectorRepository : IGraphVectorRepository
     public async Task<IEnumerable<RelationshipVector>> GetAllRelationshipVectorsAsync(CancellationToken cancellationToken = default)
     {
         using var connection = CreateConnection();
-        var sql = $"SELECT Id, SourceEntityName, TargetEntityName, Content, Embedding, CreatedAt FROM {RelationshipVectors}";
+        var sql = $"SELECT Id, SourceEntityName, TargetEntityName, Content, Embedding, DocumentId, CreatedAt FROM {RelationshipVectors}";
         var results = await connection.QueryAsync<RelationshipVectorDto>(sql);
         return results.Select(r => r.ToEntity());
     }
@@ -207,9 +229,11 @@ public class SqlServerGraphVectorRepository : IGraphVectorRepository
                     EntityName NVARCHAR(500) NOT NULL,
                     Content NVARCHAR(MAX) NOT NULL,
                     Embedding VECTOR({_embeddingDimensions}) NOT NULL,
+                    DocumentId UNIQUEIDENTIFIER NOT NULL,
                     CreatedAt DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
                     CONSTRAINT PK_EntityVectors PRIMARY KEY (Id),
-                    CONSTRAINT UQ_EntityVectors_Name UNIQUE (EntityName)
+                    CONSTRAINT UQ_EntityVectors_NameDoc UNIQUE (EntityName, DocumentId),
+                    CONSTRAINT FK_EntityVectors_Documents FOREIGN KEY (DocumentId) REFERENCES [{_schemaName}].[Documents](Id)
                 );
             END
 
@@ -221,20 +245,28 @@ public class SqlServerGraphVectorRepository : IGraphVectorRepository
                     TargetEntityName NVARCHAR(500) NOT NULL,
                     Content NVARCHAR(MAX) NOT NULL,
                     Embedding VECTOR({_embeddingDimensions}) NOT NULL,
+                    DocumentId UNIQUEIDENTIFIER NOT NULL,
                     CreatedAt DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
                     CONSTRAINT PK_RelationshipVectors PRIMARY KEY (Id),
-                    CONSTRAINT UQ_RelationshipVectors_Pair UNIQUE (SourceEntityName, TargetEntityName)
+                    CONSTRAINT UQ_RelationshipVectors_PairDoc UNIQUE (SourceEntityName, TargetEntityName, DocumentId),
+                    CONSTRAINT FK_RelationshipVectors_Documents FOREIGN KEY (DocumentId) REFERENCES [{_schemaName}].[Documents](Id)
                 );
             END
 
             IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_EntityVectors_EntityName')
                 CREATE INDEX IX_EntityVectors_EntityName ON [{_schemaName}].[EntityVectors](EntityName);
 
+            IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_EntityVectors_DocumentId')
+                CREATE INDEX IX_EntityVectors_DocumentId ON [{_schemaName}].[EntityVectors](DocumentId);
+
             IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_RelationshipVectors_Source')
                 CREATE INDEX IX_RelationshipVectors_Source ON [{_schemaName}].[RelationshipVectors](SourceEntityName);
 
             IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_RelationshipVectors_Target')
                 CREATE INDEX IX_RelationshipVectors_Target ON [{_schemaName}].[RelationshipVectors](TargetEntityName);
+
+            IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_RelationshipVectors_DocumentId')
+                CREATE INDEX IX_RelationshipVectors_DocumentId ON [{_schemaName}].[RelationshipVectors](DocumentId);
         ";
 
         await connection.ExecuteAsync(sql);

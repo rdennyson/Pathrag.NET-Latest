@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using PathRAG.NET.Core.Commands.Documents;
 using PathRAG.NET.Core.Queries.Documents;
 using PathRAG.NET.Models.DTOs;
+using PathRAG.NET.Models.Entities;
 
 namespace PathRAG.NET.API.Endpoints;
 
@@ -60,6 +61,7 @@ public static class DocumentEndpoints
 
     private static async Task<IResult> UploadDocument(
         [FromForm] IFormFile file,
+        [FromForm] Guid? documentTypeId,
         [FromServices] IMediator mediator,
         CancellationToken cancellationToken)
     {
@@ -67,7 +69,8 @@ public static class DocumentEndpoints
             return Results.BadRequest("No file uploaded");
 
         using var stream = file.OpenReadStream();
-        var command = new UploadDocumentCommand(file.FileName, file.ContentType, stream);
+        var typeId = documentTypeId ?? DocumentTypeConstants.GeneralDocumentTypeId;
+        var command = new UploadDocumentCommand(file.FileName, file.ContentType, stream, typeId);
         var result = await mediator.Send(command, cancellationToken);
         
         return Results.Created($"/api/documents/{result.DocumentId}", result);

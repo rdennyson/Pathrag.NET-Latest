@@ -18,6 +18,7 @@ public class PathRAGDbContext : DbContext
 
     public DbSet<Document> Documents => Set<Document>();
     public DbSet<DocumentChunk> DocumentChunks => Set<DocumentChunk>();
+    public DbSet<DocumentType> DocumentTypes => Set<DocumentType>();
     public DbSet<ChatThread> ChatThreads => Set<ChatThread>();
     public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
     public DbSet<PathRAGLog> PathRAGLogs => Set<PathRAGLog>();
@@ -41,6 +42,12 @@ public class PathRAGDbContext : DbContext
             entity.Property(e => e.ContentType).HasMaxLength(100);
             entity.Property(e => e.Status).IsRequired().HasMaxLength(50).HasDefaultValue("pending");
             entity.Property(e => e.CreationDate).HasDefaultValueSql("SYSDATETIMEOFFSET()");
+            entity.Property(e => e.DocumentTypeId).IsRequired();
+
+            entity.HasOne(e => e.DocumentType)
+                  .WithMany(dt => dt.Documents)
+                  .HasForeignKey(e => e.DocumentTypeId)
+                  .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasMany(e => e.Chunks)
                   .WithOne(c => c.Document)
@@ -58,6 +65,90 @@ public class PathRAGDbContext : DbContext
             entity.Property(e => e.Embedding)
                   .HasColumnType("vector(1536)")
                   .IsRequired();
+        });
+
+        // DocumentType configuration
+        modelBuilder.Entity<DocumentType>(entity =>
+        {
+            entity.ToTable("DocumentTypes", _schemaName);
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Name).IsRequired().HasMaxLength(150);
+            entity.Property(e => e.Description).HasMaxLength(500);
+
+            entity.HasOne(e => e.ParentDocumentType)
+                  .WithMany(e => e.Children)
+                  .HasForeignKey(e => e.ParentDocumentTypeId)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasData(
+                new DocumentType
+                {
+                    Id = DocumentTypeConstants.GeneralDocumentTypeId,
+                    Name = "General Documents",
+                    Description = "General files without a specialized category"
+                },
+                new DocumentType
+                {
+                    Id = Guid.Parse("00000000-0000-0000-0000-000000000002"),
+                    Name = "HR Documents",
+                    Description = "Human resources policies, onboarding, and compliance"
+                },
+                new DocumentType
+                {
+                    Id = Guid.Parse("00000000-0000-0000-0000-000000000003"),
+                    Name = "Policy Documents",
+                    Description = "Formal policy files created by HR",
+                    ParentDocumentTypeId = Guid.Parse("00000000-0000-0000-0000-000000000002")
+                },
+                new DocumentType
+                {
+                    Id = Guid.Parse("00000000-0000-0000-0000-000000000004"),
+                    Name = "Leave Policies",
+                    Description = "Leave, PTO, and time-off policies",
+                    ParentDocumentTypeId = Guid.Parse("00000000-0000-0000-0000-000000000003")
+                },
+                new DocumentType
+                {
+                    Id = Guid.Parse("00000000-0000-0000-0000-000000000005"),
+                    Name = "Travel Policies",
+                    Description = "Travel, expense, and reimbursement guidelines",
+                    ParentDocumentTypeId = Guid.Parse("00000000-0000-0000-0000-000000000003")
+                },
+                new DocumentType
+                {
+                    Id = Guid.Parse("00000000-0000-0000-0000-000000000006"),
+                    Name = "Benefits Policies",
+                    Description = "Benefits, compensation, and perks documentation",
+                    ParentDocumentTypeId = Guid.Parse("00000000-0000-0000-0000-000000000003")
+                },
+                new DocumentType
+                {
+                    Id = Guid.Parse("00000000-0000-0000-0000-000000000007"),
+                    Name = "Onboarding Documents",
+                    Description = "New hire and onboarding materials",
+                    ParentDocumentTypeId = Guid.Parse("00000000-0000-0000-0000-000000000002")
+                },
+                new DocumentType
+                {
+                    Id = Guid.Parse("00000000-0000-0000-0000-000000000008"),
+                    Name = "Finance Documents",
+                    Description = "Budgets, forecasts, and compliance materials"
+                },
+                new DocumentType
+                {
+                    Id = Guid.Parse("00000000-0000-0000-0000-000000000009"),
+                    Name = "Budget Reports",
+                    Description = "Monthly and quarterly budget reports",
+                    ParentDocumentTypeId = Guid.Parse("00000000-0000-0000-0000-000000000008")
+                },
+                new DocumentType
+                {
+                    Id = Guid.Parse("00000000-0000-0000-0000-00000000000A"),
+                    Name = "Expense Policies",
+                    Description = "Finance expense policy documentation",
+                    ParentDocumentTypeId = Guid.Parse("00000000-0000-0000-0000-000000000008")
+                }
+            );
         });
 
         // ChatThread configuration

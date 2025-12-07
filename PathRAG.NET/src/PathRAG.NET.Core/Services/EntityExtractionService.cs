@@ -33,6 +33,7 @@ public class EntityExtractionService : IEntityExtractionService
     public async Task<(IEnumerable<ExtractedEntityDto> Entities, IEnumerable<ExtractedRelationshipDto> Relationships)>
         ExtractEntitiesAndRelationshipsAsync(
             string text,
+            Guid documentId,
             string sourceId,
             CancellationToken cancellationToken = default)
     {
@@ -73,7 +74,7 @@ public class EntityExtractionService : IEntityExtractionService
                 if (loopContent != "yes") break;
             }
 
-            return ParseExtractionResponse(finalResult, sourceId);
+            return ParseExtractionResponse(finalResult, documentId, sourceId);
         }
         catch (Exception ex)
         {
@@ -161,7 +162,7 @@ Output:
     }
 
     private static (IEnumerable<ExtractedEntityDto> Entities, IEnumerable<ExtractedRelationshipDto> Relationships)
-        ParseExtractionResponse(string response, string sourceId)
+        ParseExtractionResponse(string response, Guid documentId, string sourceId)
     {
         var entities = new List<ExtractedEntityDto>();
         var relationships = new List<ExtractedRelationshipDto>();
@@ -193,7 +194,7 @@ Output:
                 var entityType = CleanString(rawAttributes[2]).ToUpperInvariant();
                 var description = CleanString(rawAttributes[3]);
 
-                entities.Add(new ExtractedEntityDto(entityName, entityType, description, sourceId));
+                entities.Add(new ExtractedEntityDto(entityName, entityType, description, sourceId, documentId));
             }
             // Parse relationship (matching Python's _handle_single_relationship_extraction)
             // Python: if len(record_attributes) < 5 or record_attributes[0] != '"relationship"'
@@ -214,7 +215,7 @@ Output:
                     weight = double.Parse(lastAttr);
                 }
 
-                relationships.Add(new ExtractedRelationshipDto(source, target, description, keywords, weight, sourceId));
+                relationships.Add(new ExtractedRelationshipDto(source, target, description, keywords, weight, sourceId, documentId));
             }
         }
 
