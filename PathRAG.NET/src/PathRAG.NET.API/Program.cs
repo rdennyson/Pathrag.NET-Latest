@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using PathRAG.NET.API.Endpoints;
 using PathRAG.NET.Core;
 using PathRAG.NET.Data;
@@ -63,9 +64,12 @@ app.MapChatEndpoints();
 app.MapGraphEndpoints();
 app.MapLogEndpoints();
 
-// Initialize database (graph tables and vector tables)
+// Initialize database (ensure EF migrations run before graph tables)
 using (var scope = app.Services.CreateScope())
 {
+    var context = scope.ServiceProvider.GetRequiredService<PathRAG.NET.Data.Contexts.PathRAGDbContext>();
+    await context.Database.MigrateAsync();
+
     var graphRepo = scope.ServiceProvider.GetRequiredService<PathRAG.NET.Data.Graph.Interfaces.IGraphRepository>();
     var graphVectorRepo = scope.ServiceProvider.GetRequiredService<PathRAG.NET.Data.Graph.Interfaces.IGraphVectorRepository>();
 

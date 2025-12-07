@@ -16,7 +16,7 @@ public interface IGraphRepository
     Task<GraphEntity> UpsertEntityAsync(GraphEntity entity, CancellationToken cancellationToken = default);
     Task<IEnumerable<GraphEntity>> UpsertEntitiesAsync(IEnumerable<GraphEntity> entities, CancellationToken cancellationToken = default);
     Task<bool> EntityExistsAsync(string entityName, Guid? documentId = null, CancellationToken cancellationToken = default);
-    Task DeleteEntityAsync(string entityName, CancellationToken cancellationToken = default);
+    Task DeleteEntityAsync(string entityName, Guid? documentId = null, CancellationToken cancellationToken = default);
     
     // Relationship (Edge) Operations
     Task<GraphRelationship?> GetRelationshipAsync(string sourceEntity, string targetEntity, Guid? documentId = null, CancellationToken cancellationToken = default);
@@ -25,7 +25,7 @@ public interface IGraphRepository
     Task<IEnumerable<GraphRelationship>> GetRelationshipsByEntityAsync(string entityName, CancellationToken cancellationToken = default);
     Task<GraphRelationship> UpsertRelationshipAsync(GraphRelationship relationship, CancellationToken cancellationToken = default);
     Task<IEnumerable<GraphRelationship>> UpsertRelationshipsAsync(IEnumerable<GraphRelationship> relationships, CancellationToken cancellationToken = default);
-    Task DeleteRelationshipAsync(string sourceEntity, string targetEntity, CancellationToken cancellationToken = default);
+    Task DeleteRelationshipAsync(string sourceEntity, string targetEntity, Guid? documentId = null, CancellationToken cancellationToken = default);
     
     // Graph Traversal Operations (PathRAG specific)
     Task<IEnumerable<GraphEntity>> GetNeighborsAsync(string entityName, int maxHops = 1, CancellationToken cancellationToken = default);
