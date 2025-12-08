@@ -167,14 +167,12 @@ public class SqlServerGraphRepository : IGraphRepository
         return count > 0;
     }
 
-    public async Task DeleteEntityAsync(string entityName, Guid? documentId = null, CancellationToken cancellationToken = default)
+    public async Task DeleteEntityAsync(Guid? documentId, CancellationToken cancellationToken = default)
     {
         using var connection = CreateConnection();
-        var documentFilter = documentId.HasValue ? "AND DocumentId = @DocumentId" : string.Empty;
-        var sql = $"DELETE FROM {GraphEntities} WHERE EntityName = @EntityName {documentFilter}";
+        var sql = $"DELETE FROM {GraphEntities} WHERE DocumentId = @DocumentId";
         await connection.ExecuteAsync(sql, new
         {
-            EntityName = entityName.ToUpperInvariant(),
             DocumentId = documentId
         });
     }
@@ -359,20 +357,16 @@ public class SqlServerGraphRepository : IGraphRepository
         return results;
     }
 
-    public async Task DeleteRelationshipAsync(string sourceEntity, string targetEntity, Guid? documentId = null, CancellationToken cancellationToken = default)
+    public async Task DeleteRelationshipAsync(Guid? documentId = null, CancellationToken cancellationToken = default)
     {
         using var connection = CreateConnection();
-        var documentFilter = documentId.HasValue ? "AND r.DocumentId = @DocumentId" : string.Empty;
         var sql = $@"
             DELETE r FROM {GraphRelationships} r, {GraphEntities} src, {GraphEntities} tgt
             WHERE MATCH(src-(r)->tgt)
-            AND src.EntityName = @SourceEntity AND tgt.EntityName = @TargetEntity
-            {documentFilter}";
+            AND r.DocumentId = @DocumentId";
 
         await connection.ExecuteAsync(sql, new
         {
-            SourceEntity = sourceEntity.ToUpperInvariant(),
-            TargetEntity = targetEntity.ToUpperInvariant(),
             DocumentId = documentId
         });
     }

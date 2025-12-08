@@ -36,7 +36,7 @@ public interface IGraphVectorRepository
     /// Delete entity vector by entity name
     /// </summary>
     Task DeleteEntityVectorAsync(
-        string entityName,
+        Guid documentId,
         CancellationToken cancellationToken = default);
 
     // Relationship Vector Operations
@@ -67,8 +67,7 @@ public interface IGraphVectorRepository
     /// Delete relationship vector by source and target entity
     /// </summary>
     Task DeleteRelationshipVectorAsync(
-        string sourceEntity,
-        string targetEntity,
+        Guid documentId,
         CancellationToken cancellationToken = default);
 
     // Database Operations

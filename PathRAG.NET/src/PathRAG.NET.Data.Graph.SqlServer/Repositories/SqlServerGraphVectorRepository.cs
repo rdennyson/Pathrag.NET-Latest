@@ -106,11 +106,11 @@ public class SqlServerGraphVectorRepository : IGraphVectorRepository
         return results.Select(r => r.ToEntity());
     }
 
-    public async Task DeleteEntityVectorAsync(string entityName, CancellationToken cancellationToken = default)
+    public async Task DeleteEntityVectorAsync(Guid documentId, CancellationToken cancellationToken = default)
     {
         using var connection = CreateConnection();
-        var sql = $"DELETE FROM {EntityVectors} WHERE EntityName = @EntityName";
-        await connection.ExecuteAsync(sql, new { EntityName = entityName.ToUpperInvariant() });
+        var sql = $"DELETE FROM {EntityVectors} WHERE DocumentId = @DocumentId";
+        await connection.ExecuteAsync(sql, new { DocumentId = documentId });
     }
 
     #endregion
@@ -194,14 +194,13 @@ public class SqlServerGraphVectorRepository : IGraphVectorRepository
         return results.Select(r => r.ToEntity());
     }
 
-    public async Task DeleteRelationshipVectorAsync(string sourceEntity, string targetEntity, CancellationToken cancellationToken = default)
+    public async Task DeleteRelationshipVectorAsync(Guid documentId, CancellationToken cancellationToken = default)
     {
         using var connection = CreateConnection();
-        var sql = $"DELETE FROM {RelationshipVectors} WHERE SourceEntityName = @SourceEntity AND TargetEntityName = @TargetEntity";
+        var sql = $"DELETE FROM {RelationshipVectors} WHERE DocumentId = @DocumentId";
         await connection.ExecuteAsync(sql, new
         {
-            SourceEntity = sourceEntity.ToUpperInvariant(),
-            TargetEntity = targetEntity.ToUpperInvariant()
+            DocumentId = documentId
         });
     }
 
