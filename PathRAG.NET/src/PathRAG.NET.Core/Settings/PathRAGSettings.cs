@@ -9,7 +9,7 @@ public class PathRAGSettings
     // Chunking settings (matching Python PathRAG)
     public int ChunkTokenSize { get; init; } = 1200;  // Python: chunk_token_size = 1200
     public int ChunkOverlapTokenSize { get; init; } = 100;  // Python: chunk_overlap_token_size = 100
-    public string TiktokenModelName { get; init; } = "gpt-4o-mini";  // Python: tiktoken_model_name = "gpt-4o-mini"
+    public string TiktokenModelName { get; init; } = "gpt-4o";  // Python: tiktoken_model_name = "gpt-4o"
 
     // Entity extraction settings (matching Python PathRAG)
     public int EntityExtractMaxGleaning { get; init; } = 1;  // Python: entity_extract_max_gleaning = 1
@@ -58,4 +58,3 @@ public class OpenAIServiceSettings
     public string ApiKey { get; init; } = string.Empty;
     public int? Dimensions { get; init; }
 }
-

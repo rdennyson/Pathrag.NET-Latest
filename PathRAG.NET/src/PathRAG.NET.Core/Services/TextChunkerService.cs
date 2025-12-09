@@ -1,3 +1,5 @@
+using System;
+using System.Linq;
 using Microsoft.ML.Tokenizers;
 using PathRAG.NET.Core.Settings;
 using PathRAG.NET.Models.Entities;
@@ -15,7 +17,7 @@ public class TextChunkerService : ITextChunkerService
     public TextChunkerService(PathRAGSettings settings)
     {
         _settings = settings;
-        _tokenizer = TiktokenTokenizer.CreateForModel("gpt-4o");
+        _tokenizer = CreateTokenizer(settings.TiktokenModelName);
     }
 
     public IEnumerable<TextChunk> ChunkByTokenSize(
@@ -27,46 +29,39 @@ public class TextChunkerService : ITextChunkerService
         if (string.IsNullOrWhiteSpace(text))
             yield break;
 
-        var tokens = _tokenizer.EncodeToTokens(text, out _);
-        var tokenList = tokens.ToList();
-        
-        if (tokenList.Count == 0)
+        if (maxTokensPerChunk <= 0)
             yield break;
 
-        int chunkIndex = 0;
-        int startIndex = 0;
-
-        while (startIndex < tokenList.Count)
+        overlapTokens = Math.Max(0, overlapTokens);
+        if (overlapTokens >= maxTokensPerChunk)
         {
-            int endIndex = Math.Min(startIndex + maxTokensPerChunk, tokenList.Count);
-            
-            // Get the text for this chunk
-            var chunkTokens = tokenList.Skip(startIndex).Take(endIndex - startIndex).ToList();
-            var chunkText = string.Join("", chunkTokens.Select(t => t.Value));
-            
-            var chunkId = $"{documentId}-chunk-{chunkIndex}";
-            
+            throw new ArgumentException("overlapTokens must be less than maxTokensPerChunk", nameof(overlapTokens));
+        }
+
+        var encodedTokens = _tokenizer.EncodeToTokens(text, out _).ToArray();
+        if (encodedTokens.Length == 0)
+            yield break;
+
+        var tokenIds = encodedTokens.Select(t => t.Id).ToArray();
+        var stride = Math.Max(1, maxTokensPerChunk - overlapTokens);
+        var chunkIndex = 0;
+
+        for (var start = 0; start < tokenIds.Length; start += stride)
+        {
+            var length = Math.Min(maxTokensPerChunk, tokenIds.Length - start);
+            var chunkIds = tokenIds.AsSpan(start, length).ToArray();
+            var chunkText = (_tokenizer.Decode(chunkIds) ?? string.Empty).Trim();
+
             yield return new TextChunk
             {
-                Id = chunkId,
-                Content = chunkText.Trim(),
-                Tokens = chunkTokens.Count,
+                Id = $"{documentId}-chunk-{chunkIndex}",
+                Content = chunkText,
+                Tokens = chunkIds.Length,
                 FullDocId = documentId,
                 ChunkOrderIndex = chunkIndex
             };
 
             chunkIndex++;
-            
-            // Move start index forward, accounting for overlap
-            if (endIndex >= tokenList.Count)
-                break;
-                
-            startIndex = endIndex - overlapTokens;
-            if (startIndex < 0) startIndex = 0;
-            
-            // Prevent infinite loop
-            if (startIndex >= endIndex)
-                break;
         }
     }
 
@@ -74,8 +69,23 @@ public class TextChunkerService : ITextChunkerService
     {
         if (string.IsNullOrWhiteSpace(text))
             return 0;
-            
-        return _tokenizer.CountTokens(text);
+
+        return _tokenizer.EncodeToTokens(text, out _).Count;
+    }
+
+    private static Tokenizer CreateTokenizer(string? modelName)
+    {
+        var fallbackModel = "gpt-4o";
+        var requestedModel = string.IsNullOrWhiteSpace(modelName) ? fallbackModel : modelName;
+
+        try
+        {
+            return TiktokenTokenizer.CreateForModel(requestedModel);
+        }
+        catch
+        {
+            // Fallback to GPT-4o tokenizer if the configured model is unavailable locally
+            return TiktokenTokenizer.CreateForModel(fallbackModel);
+        }
     }
 }
-

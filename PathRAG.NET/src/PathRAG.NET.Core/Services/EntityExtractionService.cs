@@ -99,6 +99,7 @@ Use English as output language.
 - entity_type: One of the following types: [{entityTypes}]
 - entity_description: Comprehensive description of the entity's attributes and activities
 Format each entity as (""entity""{TupleDelimiter}<entity_name>{TupleDelimiter}<entity_type>{TupleDelimiter}<entity_description>)
+Only output an entity if you can later connect it to at least one other entity via a relationship in Step 2.
 
 2. From the entities identified in step 1, identify all pairs of (source_entity, target_entity) that are *clearly related* to each other.
 For each pair of related entities, extract the following information:
@@ -108,6 +109,7 @@ For each pair of related entities, extract the following information:
 - relationship_strength: a numeric score indicating strength of the relationship between the source entity and target entity
 - relationship_keywords: one or more high-level key words that summarize the overarching nature of the relationship, focusing on concepts or themes rather than specific details
 Format each relationship as (""relationship""{TupleDelimiter}<source_entity>{TupleDelimiter}<target_entity>{TupleDelimiter}<relationship_description>{TupleDelimiter}<relationship_keywords>{TupleDelimiter}<relationship_strength>)
+Ensure *every* entity emitted in step 1 appears in at least one relationship (as either source or target). If an entity initially appears isolated, re-read the passage to find the closest related entity and describe that linkage explicitly. Drop entities that truly cannot be connected.
 
 3. Identify high-level key words that summarize the main concepts, themes, or topics of the entire text. These should capture the overarching ideas present in the document.
 Format the content-level key words as (""content_keywords""{TupleDelimiter}<high_level_keywords>)
