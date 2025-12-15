@@ -6,7 +6,7 @@ This guide connects the PathRAG research blueprint to its .NET realization insid
 
 ## 1. Research Background
 
-- **Paper.** *PathRAG: Pruning Graph-Based Retrieval Augmented Generation with Relational Paths.[PathRAG: Pruning Graph-Based Retrieval Augmented Generation with Relational Paths](https://arxiv.org/html/2502.14902v2)*
+- **Paper.** [PathRAG: Pruning Graph-Based Retrieval Augmented Generation with Relational Paths](https://arxiv.org/html/2502.14902v2)
 - **Authors.** Boyu Chen¹, Zirui Guo², Zidan Yang¹, Yuluo Chen¹, Junze Chen¹, Zhenghao Liu³, Chuan Shi¹, Cheng Yang¹.
 - **Core idea.** Replace flat neighbor dumps with a lightweight graph pipeline that surfaces only the most reliable relational paths, then order those paths by reliability inside the prompt to avoid “lost in the middle” effects.
 - **Stages.**
