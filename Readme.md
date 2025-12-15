@@ -213,7 +213,7 @@ Because every repository call receives the filtered document ID set, a policy qu
 
 ---
 
-## Author
+## Code
 
 Robert Dennyson, Solution Architect, UK  
 Contact: robertdennyson@live.in
