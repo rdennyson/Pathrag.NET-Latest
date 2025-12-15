@@ -1,5 +1,7 @@
-using System.Net.Http.Json;
+using Markdig;
+using Microsoft.AspNetCore.Components;
 using PathRAG.NET.Models.DTOs;
+using System.Net.Http.Json;
 
 namespace PathRAG.NET.UI.Services;
 
@@ -37,9 +39,11 @@ public class ChatService : IChatService
     {
         var response = await _httpClient.PostAsJsonAsync("api/chat/threads", new { Title = title });
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<ChatThreadDto>()
+        var result = await response.Content.ReadFromJsonAsync<ChatThreadDto>()
             ?? throw new InvalidOperationException("Failed to create thread");
+        return result;
     }
+
 
     public async Task<bool> DeleteThreadAsync(Guid id)
     {
@@ -62,7 +66,9 @@ public class ChatService : IChatService
         };
         var response = await _httpClient.PostAsJsonAsync($"api/chat/threads/{threadId}/messages", payload);
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<ChatMessageDto>()
+        var result = await response.Content.ReadFromJsonAsync<ChatMessageDto>()
             ?? throw new InvalidOperationException("Failed to send message");
+        result.Content = Markdown.ToHtml(result.Content);
+        return result;
     }
 }

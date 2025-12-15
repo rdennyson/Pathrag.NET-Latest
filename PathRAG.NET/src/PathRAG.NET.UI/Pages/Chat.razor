@@ -5,6 +5,7 @@
 @inject NavigationManager Navigation
 @inject MessageService MessageService
 @using System.Linq
+@using Markdig
 
 <PageTitle>Chat - PathRAG.NET</PageTitle>
 
@@ -169,7 +170,14 @@
                                 }
                                 <div style="flex: 1; min-width: 0;">
                                     <div class="message-content">
-                                        @message.Content
+                                        @if (message.Role == "assistant")
+                                        {
+                                            @((MarkupString)@Markdown.ToHtml(message.Content))
+                                        }
+                                        else
+                                        {
+                                            @message.Content
+                                        }
                                     </div>
                                     <div class="message-time">
                                         @message.CreatedAt.ToString("HH:mm")
